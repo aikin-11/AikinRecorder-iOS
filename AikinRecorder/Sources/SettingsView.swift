@@ -162,15 +162,16 @@ private struct MeetingMemoryView: View {
     var body: some View {
         Form {
             Section {
-                Text(memory.isEmpty ? "还没有记忆。" : memory)
-                    .font(.callout)
-            } header: { Text("当前记忆") }
+                TextEditor(text: $memory)
+                    .frame(minHeight: 140)
+            } header: { Text("当前记忆") } footer: { Text("这里的内容会直接放进之后每次会议总结的提示词。") }
             Section {
                 TextField("例如：我是 Aikin，周会讨论产品进度", text: $note, axis: .vertical)
                 Button(working ? "正在整理…" : "发送给 DeepSeek") { send() }
                     .disabled(working || note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } footer: { Text("DeepSeek 会把这句话补进记忆，也可以纠正原来写错的内容。") }
         }
+        .onDisappear { MeetingMemory.text = memory }
         .navigationTitle("我的记忆")
         .navigationBarTitleDisplayMode(.inline)
         .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {

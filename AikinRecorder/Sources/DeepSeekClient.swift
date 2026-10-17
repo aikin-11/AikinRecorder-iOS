@@ -42,7 +42,8 @@ enum DeepSeekClient {
             "model": "deepseek-chat",
             "stream": true,
             "messages": [
-                ["role": "system", "content": "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。已知记忆：\(MeetingMemory.text)"],
+                ["role": "system", "content": "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。"],
+                ["role": "system", "content": "以下是用户的长期记忆，之后的每次会议总结都必须遵守。涉及人物、偏好、项目和已确认事实时以此为准，不要忽略：\n\(MeetingMemory.text.isEmpty ? "（暂无）" : MeetingMemory.text)"],
                 ["role": "user", "content": String(transcript.prefix(24_000))]
             ]
         ]

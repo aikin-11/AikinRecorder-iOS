@@ -41,7 +41,7 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(items) { item in
-                            Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id) }
+                            Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id, queued: store.queuedIDs.contains(item.id)) }
                                 .buttonStyle(.plain)
                                 .listRowBackground(Color.black)
                                 .listRowSeparator(.hidden)
@@ -52,6 +52,8 @@ struct LibraryView: View {
                                             .font(.body.weight(.medium))
                                             .foregroundStyle(.white)
                                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                            .frame(width: 72)
+                                            .background(Color.black)
                                             .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.35), lineWidth: 0.7))
                                     }
                                     .tint(.black)
@@ -200,6 +202,7 @@ private struct RecordingRow: View {
     let item: Recording
     var query = ""
     var transcribing = false
+    var queued = false
     var body: some View {
         HStack(spacing: 13) {
             VStack(alignment: .leading, spacing: 7) {
@@ -212,9 +215,13 @@ private struct RecordingRow: View {
                     Text("·")
                     Text(Recording.timeText(item.duration)).monospacedDigit()
                     if !item.summary.isEmpty { Text("· AI处理完毕") }
-                    else if !item.transcript.isEmpty {
+                    else if queued {
+                        Text("· 排队中").foregroundStyle(.yellow)
+                    } else if !item.transcript.isEmpty {
                         Text("· 已转写 \(item.transcript.count)字")
                             .foregroundStyle(transcribing ? Color.yellow : Color.secondary)
+                    } else if transcribing {
+                        Text("· 正在转写").foregroundStyle(.yellow)
                     }
                 }.font(.caption).foregroundStyle(.secondary)
             }

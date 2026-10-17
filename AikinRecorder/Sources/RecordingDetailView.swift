@@ -94,6 +94,8 @@ struct RecordingDetailView: View {
                 if store.transcribingID == item.id {
                     ProgressView(value: store.transcriptProgress)
                     Text("\(Int(store.transcriptProgress * 100))%").font(.caption.monospacedDigit())
+                } else if store.queuedIDs.contains(item.id) {
+                    Text("排队中").font(.caption).foregroundStyle(.yellow)
                 }
                 Spacer()
             }
@@ -127,7 +129,7 @@ struct RecordingDetailView: View {
                     Button("重命名", systemImage: "pencil") { titleDraft = item.title; showingRename = true }
                     Button("分享音频", systemImage: "waveform") { share(audio: true) }
                     Button("导出文字", systemImage: "doc.text") { share(audio: false) }.disabled(item.transcript.isEmpty)
-                    Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }.disabled(store.transcribingID != nil && store.transcribingID != item.id)
+                    Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }.disabled(store.queuedIDs.contains(item.id))
                     Button("查找", systemImage: "magnifyingglass") { showingFind = true }
                     Button("标记说明", systemImage: "star") { showingMarks = true }.disabled(item.marks.isEmpty)
                     Button(item.summary.isEmpty ? "会议总结" : "查看总结", systemImage: "sparkles") { openSummary() }
@@ -283,12 +285,14 @@ struct RecordingDetailView: View {
     }
 
     private var transcriptButtonTitle: String {
+        if store.queuedIDs.contains(item.id) { return "排队中" }
         if store.transcribingID == item.id { return store.transcriptPaused ? "继续转写" : "暂停转写" }
         if item.transcribedThrough > 1, item.transcribedThrough + 1 < max(item.duration, player.duration) { return "继续转写" }
         return "转写文字"
     }
 
     private func transcriptAction() {
+        if store.queuedIDs.contains(item.id) { return }
         if store.transcribingID == item.id {
             store.toggleTranscriptPause()
             return
@@ -303,12 +307,6 @@ struct RecordingDetailView: View {
 
     private func startTranscription(replacing: Bool) {
         player.pause()
-        if replacing {
-            item.lines = []
-            item.transcript = ""
-            item.transcribedThrough = 0
-            save()
-        }
         store.beginTranscription(item, from: replacing ? 0 : item.transcribedThrough)
     }
 }

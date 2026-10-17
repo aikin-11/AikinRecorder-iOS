@@ -10,11 +10,13 @@ final class LibraryStore {
     private(set) var recordings: [Recording] = []
     var errorMessage: String?
     var transcribingID: UUID?
+    var queuedIDs: Set<UUID> = []
     var transcriptProgress = 0.0
     var transcriptPaused = false
     var transcriptTick = 0
     let directory: URL
     private var speech: SpeechSession?
+    private var transcriptionQueue: [(id: UUID, start: TimeInterval)] = []
     private var lastTranscriptSave: Date?
     private var latestLines: [TranscriptCue] = []
     private var silence: AVAudioPlayer?
@@ -171,7 +173,16 @@ final class LibraryStore {
     }
 
     func beginTranscription(_ recording: Recording, from start: TimeInterval) {
-        guard transcribingID == nil else { return }
+        if transcribingID == recording.id || queuedIDs.contains(recording.id) { return }
+        if transcribingID != nil {
+            transcriptionQueue.append((recording.id, start))
+            queuedIDs.insert(recording.id)
+            return
+        }
+        startTranscriptionJob(recording, from: start)
+    }
+
+    private func startTranscriptionJob(_ recording: Recording, from start: TimeInterval) {
         var item = recording
         if start < 1 { item.lines = []; item.transcript = ""; item.transcribedThrough = 0 }
         let kept = item.lines
@@ -257,6 +268,14 @@ final class LibraryStore {
         transcribingID = nil
         transcriptPaused = false
         speech = nil
+        if !transcriptionQueue.isEmpty {
+            let next = transcriptionQueue.removeFirst()
+            queuedIDs.remove(next.id)
+            if let recording = recordings.first(where: { $0.id == next.id }) {
+                startTranscriptionJob(recording, from: next.start)
+                return
+            }
+        }
         silence?.stop()
         silence = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)

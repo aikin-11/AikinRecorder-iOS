@@ -98,7 +98,7 @@ enum DeepSeekClient {
         guard !recordings.isEmpty else { throw RecorderError.message("还没有录音可以提问。") }
         let corpus = recordings.prefix(20).map { item in
             let date = item.createdAt.formatted(date: .numeric, time: .shortened)
-            "[\(item.id.uuidString)] \(date) 时长\(Int(item.duration))秒 字数\(item.transcript.count) 标题：\(item.title)\n总结：\(item.summary.prefix(400))\n转写：\(item.transcript.prefix(2_000))"
+            return "[\(item.id.uuidString)] \(date) 时长\(Int(item.duration))秒 字数\(item.transcript.count) 标题：\(item.title)\n总结：\(item.summary.prefix(400))\n转写：\(item.transcript.prefix(2_000))"
         }.joined(separator: "\n\n")
         var request = URLRequest(url: URL(string: "https://api.deepseek.com/chat/completions")!)
         request.httpMethod = "POST"

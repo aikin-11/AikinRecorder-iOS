@@ -3,7 +3,6 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(LibraryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var apiKey = DeepSeekSettings.apiKey
     @State private var webURL = WebDAVSettings.url
     @State private var webUser = WebDAVSettings.username
     @State private var webPassword = WebDAVSettings.password
@@ -19,11 +18,10 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    SecureField("API Key", text: $apiKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } header: { Text("DeepSeek") } footer: {
-                    Text("会议总结会把转写文字发送到 api.deepseek.com。密钥只保存在这台手机。")
+                    NavigationLink("DeepSeek") { DeepSeekSettingsView() }
+                    NavigationLink("阿里云百炼") { BailianSettingsView() }
+                } header: { Text("模型服务") } footer: {
+                    Text("点进去填写密钥。密钥只保存在这台手机。")
                 }
                 Section {
                     NavigationLink {
@@ -84,7 +82,6 @@ struct SettingsView: View {
     }
 
     private func save() {
-        DeepSeekSettings.apiKey = apiKey
         WebDAVSettings.url = webURL
         WebDAVSettings.username = webUser
         WebDAVSettings.password = webPassword
@@ -119,6 +116,54 @@ struct SettingsView: View {
             selected.removeAll()
             usage = store.storageBytes()
         } catch { message = error.localizedDescription }
+    }
+}
+
+private struct DeepSeekSettingsView: View {
+    @State private var apiKey = DeepSeekSettings.apiKey
+    var body: some View {
+        Form {
+            Section {
+                SecureField("API Key", text: $apiKey)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } footer: {
+                Text("会议总结会把转写文字发送到 api.deepseek.com。")
+            }
+        }
+        .navigationTitle("DeepSeek")
+        .navigationBarTitleDisplayMode(.inline)
+        .onDisappear { DeepSeekSettings.apiKey = apiKey }
+    }
+}
+
+private struct BailianSettingsView: View {
+    @State private var apiKey = BailianSettings.apiKey
+    @State private var model = BailianSettings.model
+    @State private var endpoint = BailianSettings.endpoint
+    var body: some View {
+        Form {
+            Section {
+                SecureField("API Key", text: $apiKey)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("模型", text: $model)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                TextField("WebSocket 地址", text: $endpoint, axis: .vertical)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } footer: {
+                Text("实时转写页可选「阿里云百炼」。默认模型 qwen-audio-asr-flash，音频按 16 kHz PCM 发送。华北2（北京）地址为 wss://dashscope.aliyuncs.com/api-ws/v1/inference。")
+            }
+        }
+        .navigationTitle("阿里云百炼")
+        .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            BailianSettings.apiKey = apiKey
+            BailianSettings.model = model
+            BailianSettings.endpoint = endpoint
+        }
     }
 }
 

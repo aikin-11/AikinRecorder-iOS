@@ -21,10 +21,7 @@ struct RecordingLiveActivity: Widget {
                         .padding(.trailing, 6)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.state.snippet)
-                        .font(.footnote)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36, alignment: .topLeading)
+                    SubtitleRoll(lines: context.state.captions)
                         .padding(.horizontal, 8)
                         .padding(.bottom, 6)
                 }
@@ -44,30 +41,55 @@ struct RecordingLiveActivity: Widget {
     }
 
     private func lockScreen(_ context: ActivityViewContext<RecordingActivityAttributes>) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                WaveLines(levels: context.state.levels, paused: context.state.paused)
-                    .frame(width: 46, height: 18)
-                Text(context.state.paused ? "已暂停" : "正在录音")
-                    .font(.subheadline.weight(.semibold))
-                Spacer(minLength: 8)
-                Text(Recording.timeText(context.state.elapsed))
-                    .font(.subheadline.monospacedDigit())
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    WaveLines(levels: context.state.levels, paused: context.state.paused)
+                        .frame(width: 46, height: 18)
+                    Text(context.state.paused ? "已暂停" : "正在录音")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer(minLength: 4)
+                    Text(Recording.compactTime(context.state.elapsed))
+                        .font(.subheadline.monospacedDigit())
+                }
+                Text(context.state.snippet)
+                    .font(.footnote)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, minHeight: 34, maxHeight: 34, alignment: .topLeading)
             }
-            Text(context.state.snippet)
-                .font(.footnote)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, minHeight: 34, maxHeight: 34, alignment: .topLeading)
             Button(intent: AddMarkIntent()) {
-                Text("标记").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+                Image(systemName: "bookmark.fill")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .background(.white.opacity(0.16), in: Circle())
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
+            .accessibilityLabel("标记")
         }
-        .frame(height: 112)
+        .frame(height: 78)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .activityBackgroundTint(.black)
         .activitySystemActionForegroundColor(.white)
+    }
+}
+
+private struct SubtitleRoll: View {
+    let lines: [String]
+    var body: some View {
+        let shown = lines.suffix(3)
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(shown.enumerated()), id: \.offset) { index, line in
+                Text(line)
+                    .font(index == shown.count - 1 ? .footnote : .caption2)
+                    .foregroundStyle(.white.opacity(index == shown.count - 1 ? 1 : 0.45))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(height: 46, alignment: .bottom)
+        .clipped()
+        .animation(.easeOut(duration: 0.35), value: lines)
     }
 }
 
@@ -81,7 +103,7 @@ private struct WaveLines: View {
             Canvas { context, size in
                 let energy = levels.isEmpty ? 0.2 : levels.reduce(0, +) / Double(levels.count)
                 let amplitude = max(2, size.height * 0.46 * CGFloat(min(1, energy * 1.8)))
-                let time = timeline.date.timeIntervalSinceReferenceDate * (paused ? 0 : 1)
+                let time = reduced || paused ? 0 : timeline.date.timeIntervalSinceReferenceDate
                 for index in 0..<3 {
                     var path = Path()
                     let speed = 2.4 + Double(index) * 0.7

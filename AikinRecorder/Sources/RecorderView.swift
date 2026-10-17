@@ -13,6 +13,14 @@ struct RecorderView: View {
         @Bindable var model = model
         NavigationStack {
             VStack(spacing: 20) {
+                if model.state == .idle {
+                    Picker("转写方式", selection: $model.transcriptionEngine) {
+                        Text("Apple 本地").tag("local")
+                        Text("阿里云百炼").tag("bailian")
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                }
                 WaveformView(levels: model.levels, moving: model.state == .recording).frame(height: 88).padding(.horizontal)
                 HStack {
                     Text(Recording.timeText(model.elapsed)).font(.title2.monospacedDigit())
@@ -32,11 +40,16 @@ struct RecorderView: View {
                             VStack(alignment: .leading, spacing: 14) {
                                 ForEach(model.lines) { line in
                                     HStack(alignment: .top, spacing: 12) {
-                                        Text(Recording.timeText(line.time))
-                                            .font(.caption.monospacedDigit())
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 64, alignment: .leading)
-                                            .accessibilityLabel("时间 \(Recording.timeText(line.time))")
+                                        HStack(spacing: 2) {
+                                            Text(Recording.timeText(line.time))
+                                            if model.marks.contains(where: { abs($0.time - line.time) < 1.2 }) {
+                                                Image(systemName: "star.fill").font(.system(size: 8))
+                                            }
+                                        }
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 78, alignment: .leading)
+                                        .accessibilityLabel("时间 \(Recording.timeText(line.time))")
                                         Text(line.text)
                                             .foregroundStyle(line.provisional ? .secondary : .primary)
                                             .frame(maxWidth: .infinity, alignment: .leading)

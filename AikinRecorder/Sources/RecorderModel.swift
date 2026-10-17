@@ -15,9 +15,12 @@ final class RecorderModel {
     var levels: [Float] = Array(repeating: 0, count: 48)
     var localeID = "zh-CN"
     var liveTranscription = true
+    var transcriptionEngine = "local"
     private let engine = AVAudioEngine()
     private var capture: AudioCapture?
     private var speech: SpeechSession?
+    private var bailian: BailianRealtime?
+    private let downsampler = PCMDownsampler()
     private var item: Recording?
     private var timer: Task<Void, Never>?
     private var startTime: Date?
@@ -51,7 +54,17 @@ final class RecorderModel {
             try audioSession.setActive(true)
             var format: AVAudioFormat?
             var builder: AsyncStream<AnalyzerInput>.Continuation?
-            if liveTranscription {
+            if liveTranscription && transcriptionEngine == "bailian" {
+                let service = BailianRealtime()
+                service.onText = { [weak self] text, finished in
+                    Task { @MainActor in self?.applyBailian(text, finished: finished) }
+                }
+                service.onStatus = { [weak self] message in
+                    Task { @MainActor in self?.status = message }
+                }
+                try await service.start()
+                bailian = service
+            } else if liveTranscription {
                 let service = SpeechSession()
                 service.clock = { [weak self] in self?.elapsed ?? 0 }
                 service.onLines = { [weak self] lines in
@@ -85,6 +98,10 @@ final class RecorderModel {
             let pipeline = try AudioCapture(url: store.audioURL(for: draft), inputFormat: inputFormat,
                 analyzerFormat: format, continuation: builder,
                 onLevel: { [levelMeter] value in levelMeter.set(value) },
+                onPCM: bailian == nil ? nil : { [downsampler, weak bailian] samples, count, rate in
+                    let pcm = downsampler.convert(samples, count: count, sampleRate: rate)
+                    bailian?.appendPCM(pcm)
+                },
                 onFailure: { [weak self, weak store] message in Task { @MainActor in
                     self?.errorMessage = "音频写入失败：\(message)"
                     if let self, let store { await self.finish(in: store) }
@@ -127,6 +144,8 @@ final class RecorderModel {
             capture = nil
             await speech?.cancel()
             speech = nil
+            await bailian?.finish()
+            bailian = nil
             if let item { try? store.remove(item) }
             item = nil
             state = .idle
@@ -165,6 +184,8 @@ final class RecorderModel {
         capture = nil
         await speech?.finishLive()
         speech = nil
+        await bailian?.finish()
+        bailian = nil
         if let observer = interruptionObserver { NotificationCenter.default.removeObserver(observer); interruptionObserver = nil }
         if let observer = markObserver { NotificationCenter.default.removeObserver(observer); markObserver = nil }
         if var item {
@@ -190,7 +211,22 @@ final class RecorderModel {
         if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 0.35 { return }
         lastActivityUpdate = now
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
-        RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)), levels: activityLevels)
+        let captions = lines.suffix(4).map { String($0.text.prefix(40)) }
+        RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)), captions: captions.isEmpty ? [String(snippet.prefix(40))] : captions, levels: activityLevels)
+    }
+
+    private func applyBailian(_ text: String, finished: Bool) {
+        let spoken = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !spoken.isEmpty else { return }
+        if finished {
+            if lines.last?.provisional == true { lines.removeLast() }
+            lines.append(TranscriptLine(time: elapsed, text: spoken, provisional: false))
+        } else if lines.last?.provisional == true {
+            lines[lines.count - 1].text = spoken
+        } else {
+            lines.append(TranscriptLine(time: elapsed, text: spoken, provisional: true))
+        }
+        pushActivity(force: true)
     }
 
     func addMark() {

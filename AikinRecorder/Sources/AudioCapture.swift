@@ -9,16 +9,19 @@ final class AudioCapture: @unchecked Sendable {
     private let analyzerFormat: AVAudioFormat?
     private let continuation: AsyncStream<AnalyzerInput>.Continuation?
     private let onLevel: @Sendable (Float) -> Void
+    private let onPCM: (@Sendable (UnsafePointer<Float>, Int, Double) -> Void)?
     private let onFailure: @Sendable (String) -> Void
     private var failed = false
 
     init(url: URL, inputFormat: AVAudioFormat, analyzerFormat: AVAudioFormat?,
          continuation: AsyncStream<AnalyzerInput>.Continuation?,
          onLevel: @escaping @Sendable (Float) -> Void,
+         onPCM: (@Sendable (UnsafePointer<Float>, Int, Double) -> Void)? = nil,
          onFailure: @escaping @Sendable (String) -> Void) throws {
         self.analyzerFormat = analyzerFormat
         self.continuation = continuation
         self.onLevel = onLevel
+        self.onPCM = onPCM
         self.onFailure = onFailure
         file = try AVAudioFile(forWriting: url, settings: [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -49,6 +52,7 @@ final class AudioCapture: @unchecked Sendable {
                     var sum: Float = 0
                     for index in 0..<Int(copy.frameLength) { sum += samples[index] * samples[index] }
                     onLevel(min(1, sqrt(sum / Float(copy.frameLength)) * 6))
+                    onPCM?(samples, Int(copy.frameLength), copy.format.sampleRate)
                 }
                 guard let format = analyzerFormat, let converter, let continuation else { return }
                 let capacity = AVAudioFrameCount(ceil(Double(copy.frameLength) * format.sampleRate / copy.format.sampleRate)) + 64

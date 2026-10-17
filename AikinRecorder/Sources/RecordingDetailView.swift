@@ -15,6 +15,8 @@ struct RecordingDetailView: View {
     @State private var speech: SpeechSession?
     @State private var findText = ""
     @State private var findIndex = 0
+    @State private var showingFind = false
+    @State private var showingMarks = false
 
     var body: some View {
         @Bindable var player = player
@@ -25,10 +27,7 @@ struct RecordingDetailView: View {
                 Text(item.fileName.split(separator: ".").last?.uppercased() ?? "AUDIO")
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal)
             HStack {
-                TextField("在文本中查找", text: $findText)
-                    .textFieldStyle(.roundedBorder)
-                Button("上一处") { findIndex = max(0, findIndex - 1) }.font(.caption).disabled(findText.isEmpty)
-                Button("下一处") { findIndex += 1 }.font(.caption).disabled(findText.isEmpty)
+                Spacer()
                 Text("\(item.transcript.count) 字").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }.padding(.horizontal)
             ScrollViewReader { proxy in
@@ -43,10 +42,15 @@ struct RecordingDetailView: View {
                         VStack(alignment: .leading, spacing: 14) {
                             ForEach(item.lines) { line in
                                 HStack(alignment: .top, spacing: 12) {
-                                    Text(Recording.timeText(line.time))
-                                        .font(.caption.monospacedDigit())
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 64, alignment: .leading)
+                                    HStack(spacing: 2) {
+                                        Text(Recording.timeText(line.time))
+                                        if item.marks.contains(where: { abs($0.time - line.time) < 1.2 }) {
+                                            Image(systemName: "star.fill").font(.system(size: 8)).foregroundStyle(.yellow)
+                                        }
+                                    }
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 78, alignment: .leading)
                                     Text(highlighted(line.text))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .textSelection(.enabled)
@@ -69,21 +73,6 @@ struct RecordingDetailView: View {
                     if findText.isEmpty || hits.isEmpty { return }
                     proxy.scrollTo(hits[min(findIndex, hits.count - 1)].id, anchor: .center)
                 }
-            }
-            if !item.marks.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("标记").font(.headline)
-                    ForEach($item.marks) { $mark in
-                        HStack {
-                            Button(Recording.timeText(mark.time)) { player.play(from: mark.time) }
-                                .font(.caption.monospacedDigit())
-                            TextField("标记说明", text: $mark.note)
-                                .textFieldStyle(.roundedBorder)
-                                .onSubmit { save() }
-                        }
-                    }
-                }
-                .padding(.horizontal)
             }
             HStack {
                 Button("转写文字", systemImage: "text.bubble") { transcribeImported() }
@@ -119,6 +108,8 @@ struct RecordingDetailView: View {
                     Button("分享音频", systemImage: "waveform") { share(audio: true) }
                     Button("导出文字", systemImage: "doc.text") { share(audio: false) }.disabled(item.transcript.isEmpty)
                     Button("转写文字", systemImage: "text.bubble") { transcribeImported() }.disabled(transcribing)
+                    Button("查找", systemImage: "magnifyingglass") { showingFind = true }
+                    Button("标记说明", systemImage: "star") { showingMarks = true }.disabled(item.marks.isEmpty)
                     Button(item.summary.isEmpty ? "会议总结" : "查看总结", systemImage: "sparkles") { openSummary() }
                 } label: { Image(systemName: "ellipsis") }.accessibilityLabel("更多操作")
             }
@@ -131,6 +122,36 @@ struct RecordingDetailView: View {
         .alert("提示", isPresented: Binding(get: { errorMessage != nil || player.errorMessage != nil }, set: { if !$0 { errorMessage = nil; player.errorMessage = nil } })) {
             Button("好") { errorMessage = nil; player.errorMessage = nil }
         } message: { Text(errorMessage ?? player.errorMessage ?? "") }
+        .sheet(isPresented: $showingFind) {
+            NavigationStack {
+                Form {
+                    TextField("查找内容", text: $findText)
+                    Button("上一处") { findIndex = max(0, findIndex - 1) }.disabled(findText.isEmpty)
+                    Button("下一处") { findIndex += 1 }.disabled(findText.isEmpty)
+                }
+                .navigationTitle("查找")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showingFind = false } } }
+            }
+            .preferredColorScheme(.dark)
+            .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showingMarks) {
+            NavigationStack {
+                Form {
+                    ForEach($item.marks) { $mark in
+                        Section(Recording.timeText(mark.time)) {
+                            TextField("标记说明", text: $mark.note, axis: .vertical)
+                            Button("跳到这里") { player.play(from: mark.time); showingMarks = false }
+                        }
+                    }
+                }
+                .navigationTitle("标记说明")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { save(); showingMarks = false } } }
+            }
+            .preferredColorScheme(.dark)
+        }
         .sheet(isPresented: $showingSummary) {
             SummarySheet(summary: item.summary, progress: summaryProgress, working: summarizing) {
                 do { SystemPresenter.share(try store.shareSummary(item)) }

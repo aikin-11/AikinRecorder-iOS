@@ -20,6 +20,7 @@ struct RecordingActivityAttributes: ActivityAttributes {
         var elapsed: TimeInterval
         var paused: Bool
         var snippet: String
+        var captions: [String]
         var levels: [Double]
     }
 

@@ -210,7 +210,7 @@ final class RecorderModel {
     private func pushActivity(force: Bool) {
         guard state == .recording || state == .paused else { return }
         let now = Date()
-        if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 0.35 { return }
+        if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 0.12 { return }
         lastActivityUpdate = now
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
         let captions = lines.suffix(4).map { String($0.text.prefix(40)) }

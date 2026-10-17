@@ -47,7 +47,9 @@ struct LibraryView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Text("列表").font(.title2.weight(.bold)).foregroundStyle(.white)
+                    Text("AikinREC")
+                        .font(.custom("SpecialElite-Regular", size: 22))
+                        .foregroundStyle(.white)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingSettings = true } label: { Image(systemName: "gearshape") }
@@ -70,10 +72,12 @@ struct LibraryView: View {
                         Button("导入外部音频", systemImage: "square.and.arrow.down") { importAudio() }
                     } label: {
                         Image(systemName: "plus")
-                            .font(.headline)
+                            .font(.body.weight(.semibold))
                             .frame(width: 44, height: 44)
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
+                    .glassEffect(.regular.interactive(), in: .circle)
                     .disabled(importing)
                     .accessibilityLabel("新建")
                 }

@@ -35,15 +35,20 @@ struct RecorderView: View {
                                         HStack(spacing: 2) {
                                             Text(Recording.timeText(line.time))
                                             if model.marks.contains(where: { abs($0.time - line.time) < 1.2 }) {
-                                                Image(systemName: "star.fill").font(.system(size: 8))
+                                                Image(systemName: "bookmark.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                                             }
                                         }
                                         .font(.caption.monospacedDigit())
                                         .foregroundStyle(.secondary)
                                         .frame(width: 78, alignment: .leading)
                                         .accessibilityLabel("时间 \(Recording.timeText(line.time))")
-                                        Text(line.text)
-                                            .foregroundStyle(line.provisional ? .secondary : .primary)
+                                        Group {
+                                            if line.provisional {
+                                                TypewriterText(text: line.text).foregroundStyle(.secondary)
+                                            } else {
+                                                Text(line.text)
+                                            }
+                                        }
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .textSelection(.enabled)
                                     }
@@ -102,7 +107,7 @@ struct RecorderView: View {
                     Button("Apple 本地") { model.transcriptionEngine = "local" }
                     Button("阿里云百炼") { model.transcriptionEngine = "bailian" }
                 } label: {
-                    Text(model.transcriptionEngine == "bailian" ? "百炼" : "本地")
+                    Text(model.transcriptionEngine == "bailian" ? "百炼" : "Apple模型")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
@@ -131,6 +136,23 @@ struct RecorderView: View {
         case .saved:
             EmptyView()
         }
+    }
+}
+
+private struct TypewriterText: View {
+    let text: String
+    @State private var shown = 0
+
+    var body: some View {
+        Text(String(text.prefix(shown)))
+            .task(id: text) {
+                let target = text.count
+                if shown > target { shown = target }
+                while shown < target, !Task.isCancelled {
+                    shown += shown + 24 < target ? 2 : 1
+                    try? await Task.sleep(for: .milliseconds(18))
+                }
+            }
     }
 }
 

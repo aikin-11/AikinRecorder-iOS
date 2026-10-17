@@ -13,6 +13,20 @@ enum BailianSettings {
         }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "bailian.model") }
     }
+    static func test() async throws {
+        guard !apiKey.isEmpty else { throw RecorderError.message("请先填写阿里云百炼 API Key。") }
+        guard let url = URL(string: "https://dashscope.aliyuncs.com/compatible-mode/v1/models") else {
+            throw RecorderError.message("百炼地址无效。")
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let detail = String(data: data, encoding: .utf8) ?? ""
+            throw RecorderError.message(detail.isEmpty ? "百炼连接失败。" : "百炼连接失败：\(detail.prefix(160))")
+        }
+    }
+
     static var endpoint: String {
         get {
             let value = UserDefaults.standard.string(forKey: "bailian.endpoint") ?? ""

@@ -48,25 +48,28 @@ struct RecordingLiveActivity: Widget {
                         .frame(width: 46, height: 18)
                     Text(context.state.paused ? "已暂停" : "正在录音")
                         .font(.subheadline.weight(.semibold))
-                    Spacer(minLength: 4)
-                    Text(Recording.compactTime(context.state.elapsed))
-                        .font(.subheadline.monospacedDigit())
                 }
                 Text(context.state.snippet)
                     .font(.footnote)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, minHeight: 34, maxHeight: 34, alignment: .topLeading)
             }
-            Button(intent: AddMarkIntent()) {
-                Image(systemName: "bookmark.fill")
-                    .font(.body.weight(.semibold))
-                    .frame(width: 44, height: 44)
-                    .background(.white.opacity(0.16), in: Circle())
+            VStack(spacing: 6) {
+                Text(Recording.compactTime(context.state.elapsed))
+                    .font(.subheadline.monospacedDigit())
+                    .frame(width: 44)
+                Button(intent: AddMarkIntent()) {
+                    Image(systemName: "bookmark.fill")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .background(.white.opacity(0.16), in: Circle())
+                        .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("标记")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("标记")
         }
-        .frame(height: 78)
+        .frame(height: 96)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .activityBackgroundTint(.black)
@@ -99,7 +102,7 @@ private struct WaveLines: View {
     @Environment(\.isLuminanceReduced) private var reduced
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: paused || reduced)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: paused || reduced)) { timeline in
             Canvas { context, size in
                 let energy = levels.isEmpty ? 0.2 : levels.reduce(0, +) / Double(levels.count)
                 let amplitude = max(2, size.height * 0.46 * CGFloat(min(1, energy * 1.8)))

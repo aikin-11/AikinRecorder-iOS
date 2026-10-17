@@ -9,6 +9,18 @@ enum DeepSeekSettings {
 }
 
 enum DeepSeekClient {
+    static func test() async throws {
+        let key = DeepSeekSettings.apiKey
+        guard !key.isEmpty else { throw RecorderError.message("请先填写 DeepSeek API Key。") }
+        var request = URLRequest(url: URL(string: "https://api.deepseek.com/models")!)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let detail = String(data: data, encoding: .utf8) ?? ""
+            throw RecorderError.message(detail.isEmpty ? "DeepSeek 连接失败。" : "DeepSeek 连接失败：\(detail.prefix(160))")
+        }
+    }
+
     static func summarize(transcript: String) async throws -> String {
         let key = DeepSeekSettings.apiKey
         guard !key.isEmpty else { throw RecorderError.message("请先在设置中填写 DeepSeek API Key。") }

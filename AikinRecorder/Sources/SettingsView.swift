@@ -141,19 +141,37 @@ private struct WebDAVSettingsView: View {
 
 private struct DeepSeekSettingsView: View {
     @State private var apiKey = DeepSeekSettings.apiKey
+    @State private var message: String?
+    @State private var working = false
     var body: some View {
         Form {
             Section {
                 SecureField("API Key", text: $apiKey)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                Button(working ? "正在测试…" : "测试连接") { test() }.disabled(working)
+                Button("保存") { save(); message = "已保存。" }
             } footer: {
                 Text("会议总结会把转写文字发送到 api.deepseek.com。")
             }
         }
         .navigationTitle("DeepSeek")
         .navigationBarTitleDisplayMode(.inline)
-        .onDisappear { DeepSeekSettings.apiKey = apiKey }
+        .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("好") { message = nil }
+        } message: { Text(message ?? "") }
+    }
+
+    private func save() { DeepSeekSettings.apiKey = apiKey }
+
+    private func test() {
+        save()
+        working = true
+        Task {
+            defer { working = false }
+            do { try await DeepSeekClient.test(); message = "DeepSeek 连接成功。" }
+            catch { message = error.localizedDescription }
+        }
     }
 }
 
@@ -161,6 +179,8 @@ private struct BailianSettingsView: View {
     @State private var apiKey = BailianSettings.apiKey
     @State private var model = BailianSettings.model
     @State private var endpoint = BailianSettings.endpoint
+    @State private var message: String?
+    @State private var working = false
     var body: some View {
         Form {
             Section {
@@ -173,16 +193,32 @@ private struct BailianSettingsView: View {
                 TextField("WebSocket 地址", text: $endpoint, axis: .vertical)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                Button(working ? "正在测试…" : "测试连接") { test() }.disabled(working)
+                Button("保存") { save(); message = "已保存。" }
             } footer: {
                 Text("实时转写页可选「阿里云百炼」。默认模型 qwen-audio-asr-flash，音频按 16 kHz PCM 发送。华北2（北京）地址为 wss://dashscope.aliyuncs.com/api-ws/v1/inference。")
             }
         }
         .navigationTitle("阿里云百炼")
         .navigationBarTitleDisplayMode(.inline)
-        .onDisappear {
-            BailianSettings.apiKey = apiKey
-            BailianSettings.model = model
-            BailianSettings.endpoint = endpoint
+        .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("好") { message = nil }
+        } message: { Text(message ?? "") }
+    }
+
+    private func save() {
+        BailianSettings.apiKey = apiKey
+        BailianSettings.model = model
+        BailianSettings.endpoint = endpoint
+    }
+
+    private func test() {
+        save()
+        working = true
+        Task {
+            defer { working = false }
+            do { try await BailianSettings.test(); message = "阿里云百炼连接成功。" }
+            catch { message = error.localizedDescription }
         }
     }
 }

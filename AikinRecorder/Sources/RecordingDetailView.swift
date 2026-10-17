@@ -8,7 +8,10 @@ struct RecordingDetailView: View {
     @State private var showingRename = false
     @State private var titleDraft = ""
     @State private var summarizing = false
+    @State private var summaryProgress = 0.0
     @State private var showingSummary = false
+    @State private var transcribing = false
+    @State private var speech: SpeechSession?
 
     var body: some View {
         @Bindable var player = player
@@ -36,12 +39,22 @@ struct RecordingDetailView: View {
                                 Text(line.text)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .textSelection(.enabled)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { player.play(from: line.time) }
                             }
                         }
                     }
                     .padding(20)
                 }
             }
+            HStack {
+                Button("转写文字", systemImage: "text.bubble") { transcribeImported() }
+                    .disabled(transcribing)
+                if transcribing { ProgressView() }
+                Spacer()
+            }
+            .font(.subheadline)
+            .padding(.horizontal)
             VStack(spacing: 8) {
                 Slider(value: Binding(get: { player.position }, set: { player.seek($0) }), in: 0...max(0.01, player.duration))
                     .accessibilityLabel("播放进度")
@@ -60,7 +73,7 @@ struct RecordingDetailView: View {
             }.padding(20).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal)
         }
         .overlay(alignment: .bottomTrailing) {
-            Button { summarize() } label: {
+            Button { openSummary() } label: {
                 Group {
                     if summarizing { ProgressView().tint(.black) }
                     else { Image(systemName: "sparkles").font(.title3.weight(.semibold)) }
@@ -70,7 +83,7 @@ struct RecordingDetailView: View {
                 .background(.white, in: Circle())
             }
             .disabled(summarizing)
-            .accessibilityLabel("会议总结")
+            .accessibilityLabel(item.summary.isEmpty ? "会议总结" : "查看总结")
             .padding(.trailing, 20)
             .padding(.bottom, 210)
         }
@@ -82,7 +95,8 @@ struct RecordingDetailView: View {
                     Button("重命名", systemImage: "pencil") { titleDraft = item.title; showingRename = true }
                     Button("分享音频", systemImage: "waveform") { share(audio: true) }
                     Button("导出文字", systemImage: "doc.text") { share(audio: false) }.disabled(item.transcript.isEmpty)
-                    Button("会议总结", systemImage: "sparkles") { summarize() }
+                    Button("转写文字", systemImage: "text.bubble") { transcribeImported() }.disabled(transcribing)
+                    Button(item.summary.isEmpty ? "会议总结" : "查看总结", systemImage: "sparkles") { openSummary() }
                 } label: { Image(systemName: "ellipsis") }.accessibilityLabel("更多操作")
             }
         }
@@ -95,21 +109,18 @@ struct RecordingDetailView: View {
             Button("好") { errorMessage = nil; player.errorMessage = nil }
         } message: { Text(errorMessage ?? player.errorMessage ?? "") }
         .sheet(isPresented: $showingSummary) {
-            NavigationStack {
-                ScrollView {
-                    Text(item.summary.isEmpty ? "还没有总结。" : item.summary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .padding()
-                }
-                .navigationTitle("会议总结")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showingSummary = false } } }
+            SummarySheet(summary: item.summary, progress: summaryProgress, working: summarizing) {
+                do { SystemPresenter.share(try store.shareSummary(item)) }
+                catch { errorMessage = error.localizedDescription }
             }
-            .preferredColorScheme(.dark)
         }
         .onAppear { player.load(store.audioURL(for: item)) }
-        .onDisappear { player.stop(); save() }
+        .onDisappear {
+            player.stop()
+            let service = speech
+            Task { await service?.cancel() }
+            save()
+        }
     }
 
     private func save() {
@@ -123,16 +134,92 @@ struct RecordingDetailView: View {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    private func openSummary() {
+        if item.summary.isEmpty { summarize() }
+        else { showingSummary = true }
+    }
+
     private func summarize() {
         summarizing = true
+        summaryProgress = 0.15
+        showingSummary = true
         let transcript = item.transcript
         Task {
             defer { summarizing = false }
             do {
+                summaryProgress = 0.45
                 item.summary = try await DeepSeekClient.summarize(transcript: transcript)
+                summaryProgress = 1
                 save()
-                showingSummary = true
+            } catch {
+                showingSummary = false
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func transcribeImported() {
+        player.pause()
+        transcribing = true
+        let service = SpeechSession()
+        speech = service
+        service.onLines = { lines in
+            let cues = lines.filter { !$0.provisional }
+            let span = max(player.duration, 1)
+            item.lines = cues.enumerated().map { index, line in
+                TranscriptCue(id: line.id, time: line.time > 0 ? line.time : span * Double(index) / Double(max(cues.count, 1)), text: line.text)
+            }
+            item.transcript = cues.map(\.text).joined(separator: "\n")
+        }
+        Task {
+            defer { transcribing = false }
+            do {
+                try await service.transcribeFile(store.audioURL(for: item), localeID: "zh-CN")
+                save()
             } catch { errorMessage = error.localizedDescription }
         }
+    }
+}
+
+private struct SummarySheet: View {
+    let summary: String
+    let progress: Double
+    let working: Bool
+    let export: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                if working {
+                    ProgressView(value: progress) { Text("正在生成会议总结…").font(.footnote) }
+                        .padding(.horizontal)
+                }
+                ScrollView {
+                    Text(rendered)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding()
+                }
+            }
+            .navigationTitle("会议总结")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Menu {
+                        Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = summary }
+                        Button("导出 TXT", systemImage: "square.and.arrow.up") { export() }
+                    } label: { Image(systemName: "ellipsis") }
+                    .disabled(summary.isEmpty)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var rendered: AttributedString {
+        if summary.isEmpty { return AttributedString(working ? "正在整理…" : "还没有总结。") }
+        return (try? AttributedString(markdown: summary)) ?? AttributedString(summary)
     }
 }

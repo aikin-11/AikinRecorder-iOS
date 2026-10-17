@@ -28,7 +28,7 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(items) { item in
-                            Button { selectedItem = item } label: { RecordingRow(item: item) }
+                            Button { selectedItem = item } label: { RecordingRow(item: item, query: query) }
                                 .buttonStyle(.plain)
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
@@ -45,7 +45,7 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("录音列表")
-            .searchable(text: $query, prompt: "搜索录音与文字")
+            .searchable(text: $query, prompt: "搜索转写内容")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingSettings = true } label: { Image(systemName: "gearshape") }
@@ -107,17 +107,22 @@ struct LibraryView: View {
 
 private struct RecordingRow: View {
     let item: Recording
+    var query = ""
     var body: some View {
         HStack(spacing: 13) {
             Image(systemName: "play.fill").font(.system(size: 16, weight: .semibold))
                 .frame(width: 40, height: 40).background(.white.opacity(0.12), in: Circle())
             VStack(alignment: .leading, spacing: 7) {
                 Text(item.title).font(.body.weight(.medium)).lineLimit(2).multilineTextAlignment(.leading)
+                if !query.isEmpty, let snippet = highlightedSnippet(item.transcript, query: query) {
+                    Text(snippet).font(.caption).lineLimit(2)
+                }
                 HStack {
                     Text(item.createdAt, format: .dateTime.month().day().hour().minute())
                     Text("·")
                     Text(Recording.timeText(item.duration)).monospacedDigit()
-                    if !item.transcript.isEmpty { Text("· 已转写") }
+                    if !item.summary.isEmpty { Text("· AI处理") }
+                    else if !item.transcript.isEmpty { Text("· 已转写") }
                 }.font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -129,5 +134,17 @@ private struct RecordingRow: View {
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.35), lineWidth: 0.7))
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .accessibilityElement(children: .combine)
+    }
+
+    private func highlightedSnippet(_ text: String, query: String) -> AttributedString? {
+        guard let range = text.range(of: query, options: .caseInsensitive) else { return nil }
+        let start = text.index(range.lowerBound, offsetBy: -24, limitedBy: text.startIndex) ?? text.startIndex
+        let end = text.index(range.upperBound, offsetBy: 24, limitedBy: text.endIndex) ?? text.endIndex
+        var snippet = AttributedString(String(text[start..<end]))
+        if let hit = snippet.range(of: query, options: .caseInsensitive) {
+            snippet[hit].backgroundColor = .yellow
+            snippet[hit].foregroundColor = .black
+        }
+        return snippet
     }
 }

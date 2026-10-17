@@ -22,18 +22,6 @@ struct RecorderView: View {
                     Spacer()
                     Text(model.state == .paused ? "已暂停" : model.status).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
                 }.padding(.horizontal)
-                if model.state == .idle {
-                    VStack(spacing: 16) {
-                        Toggle("实时转写", isOn: $model.liveTranscription)
-                        Picker("转写语言", selection: $model.localeID) {
-                            Text("普通话").tag("zh-CN")
-                            Text("English").tag("en-US")
-                            Text("粤语").tag("yue-CN")
-                        }
-                        Text("使用 Apple 本地语音模型。首次使用可能需要下载语言资源；音频保存在本机。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }.padding(20).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal)
-                }
                 ScrollViewReader { proxy in
                     ScrollView {
                         if model.lines.isEmpty {
@@ -127,15 +115,28 @@ struct RecorderView: View {
 struct WaveformView: View {
     let levels: [Float]
     var body: some View {
-        Canvas { context, size in
-            let count = CGFloat(max(levels.count, 1))
-            let spacing: CGFloat = 3
-            let width = max(2, (size.width - spacing * (count - 1)) / count)
-            for index in levels.indices {
-                let height = max(2, CGFloat(levels[index]) * size.height)
-                let x = CGFloat(index) * (width + spacing)
-                let rect = CGRect(x: x, y: (size.height - height) / 2, width: width, height: height)
-                context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .color(.white.opacity(0.75)))
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
+            Canvas { context, size in
+                let energy = levels.isEmpty ? 0.15 : levels.reduce(0, +) / Float(levels.count)
+                let amplitude = max(6, CGFloat(min(1, energy)) * size.height * 0.42)
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                let waves: [(speed: Double, freq: CGFloat, phase: Double, alpha: Double)] = [
+                    (0.35, 1.1, 0, 0.9),
+                    (0.22, 1.7, 1.4, 0.55),
+                    (0.16, 0.7, 2.2, 0.35)
+                ]
+                for wave in waves {
+                    var path = Path()
+                    let step = max(2, size.width / 80)
+                    var x: CGFloat = 0
+                    while x <= size.width {
+                        let y = size.height / 2 + sin(x / size.width * .pi * 2 * wave.freq + CGFloat(time * wave.speed + wave.phase)) * amplitude
+                        if x == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                        else { path.addLine(to: CGPoint(x: x, y: y)) }
+                        x += step
+                    }
+                    context.stroke(path, with: .color(.white.opacity(wave.alpha)), lineWidth: 1.6)
+                }
             }
         }
         .accessibilityLabel("麦克风音量波形")

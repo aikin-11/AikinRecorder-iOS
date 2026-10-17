@@ -84,11 +84,36 @@ final class LibraryStore {
         return target
     }
 
+    func storageBytes() -> Int64 {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        return files.reduce(0) { sum, url in
+            sum + Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+    }
+
+    func removeAll() throws {
+        let previous = recordings
+        recordings = []
+        do { try persist() } catch { recordings = previous; throw error }
+        for item in previous {
+            let url = audioURL(for: item)
+            if FileManager.default.fileExists(atPath: url.path) { try? FileManager.default.removeItem(at: url) }
+        }
+    }
+
     func shareText(_ item: Recording) throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Exports/\(item.id)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent(Recording.cleanTitle(item.title)).appendingPathExtension("txt")
         try item.transcript.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    func shareSummary(_ item: Recording) throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Exports/\(item.id)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent(Recording.cleanTitle(item.title) + "_会议总结").appendingPathExtension("txt")
+        try item.summary.write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 

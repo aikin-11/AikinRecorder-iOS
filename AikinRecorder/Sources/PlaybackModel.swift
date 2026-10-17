@@ -42,6 +42,17 @@ final class PlaybackModel {
     }
 
     func seek(_ time: TimeInterval) { player?.currentTime = min(max(0, time), duration); position = player?.currentTime ?? 0 }
+
+    func play(from time: TimeInterval) {
+        seek(time)
+        guard let player else { return }
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+            guard player.play() else { throw RecorderError.message("音频播放未能启动。") }
+            isPlaying = true
+        } catch { errorMessage = error.localizedDescription }
+    }
     func pause() { player?.pause(); isPlaying = false }
     func stop() {
         player?.stop()

@@ -9,6 +9,7 @@ struct AikinRecorderApp: App {
                 .environment(library)
                 .preferredColorScheme(.dark)
                 .tint(.white)
+                .task { await WebDAVSync.syncIfDue(library) }
         }
     }
 }

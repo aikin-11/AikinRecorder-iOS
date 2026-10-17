@@ -12,11 +12,14 @@ struct RecordingDetailView: View {
     @State private var summaryProgress = 0.0
     @State private var showingSummary = false
     @State private var transcribing = false
+    @State private var transcriptPaused = false
+    @State private var transcriptProgress = 0.0
     @State private var speech: SpeechSession?
     @State private var findText = ""
     @State private var findIndex = 0
     @State private var showingFind = false
     @State private var showingMarks = false
+    @State private var transcriptScrubbing = false
 
     var body: some View {
         @Bindable var player = player
@@ -68,6 +71,10 @@ struct RecordingDetailView: View {
                     guard player.isPlaying, let id = activeLineID else { return }
                     withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(id, anchor: .center) }
                 }
+                .onChange(of: player.position) {
+                    guard transcriptScrubbing, let id = activeLineID else { return }
+                    proxy.scrollTo(id, anchor: .center)
+                }
                 .onChange(of: findIndex) {
                     let hits = item.lines.filter { $0.text.localizedStandardContains(findText) }
                     if findText.isEmpty || hits.isEmpty { return }
@@ -75,15 +82,20 @@ struct RecordingDetailView: View {
                 }
             }
             HStack {
-                Button("转写文字", systemImage: "text.bubble") { transcribeImported() }
-                    .disabled(transcribing)
-                if transcribing { ProgressView() }
+                Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }
+                if transcribing {
+                    ProgressView(value: transcriptProgress)
+                    Text("\(Int(transcriptProgress * 100))%").font(.caption.monospacedDigit())
+                }
                 Spacer()
             }
             .font(.subheadline)
             .padding(.horizontal)
             VStack(spacing: 8) {
-                Slider(value: Binding(get: { player.position }, set: { player.seek($0) }), in: 0...max(0.01, player.duration))
+                Slider(value: Binding(get: { player.position }, set: { player.scrub(to: $0) }), in: 0...max(0.01, player.duration), onEditingChanged: { editing in
+                    transcriptScrubbing = editing
+                    if editing { player.beginScrub() } else { player.endScrub() }
+                })
                     .accessibilityLabel("播放进度")
                 HStack { Text(Recording.timeText(player.position)); Spacer(); Text(Recording.timeText(player.duration)) }
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -107,7 +119,7 @@ struct RecordingDetailView: View {
                     Button("重命名", systemImage: "pencil") { titleDraft = item.title; showingRename = true }
                     Button("分享音频", systemImage: "waveform") { share(audio: true) }
                     Button("导出文字", systemImage: "doc.text") { share(audio: false) }.disabled(item.transcript.isEmpty)
-                    Button("转写文字", systemImage: "text.bubble") { transcribeImported() }.disabled(transcribing)
+                    Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }
                     Button("查找", systemImage: "magnifyingglass") { showingFind = true }
                     Button("标记说明", systemImage: "star") { showingMarks = true }.disabled(item.marks.isEmpty)
                     Button(item.summary.isEmpty ? "会议总结" : "查看总结", systemImage: "sparkles") { openSummary() }
@@ -221,25 +233,56 @@ struct RecordingDetailView: View {
         }
     }
 
-    private func transcribeImported() {
+    private var transcriptButtonTitle: String {
+        if transcribing { return transcriptPaused ? "继续转写" : "暂停转写" }
+        if item.transcribedThrough > 1, item.transcribedThrough + 1 < max(item.duration, player.duration) { return "继续转写" }
+        return "转写文字"
+    }
+
+    private func transcriptAction() {
+        if transcribing {
+            transcriptPaused.toggle()
+            speech?.setFilePaused(transcriptPaused)
+            if transcriptPaused {
+                item.transcribedThrough = speech?.submitted ?? item.transcribedThrough
+                save()
+            }
+            return
+        }
+        let resume = item.transcribedThrough > 1 && item.transcribedThrough + 1 < max(item.duration, player.duration)
+        if !resume { item.lines = []; item.transcript = ""; item.transcribedThrough = 0 }
+        transcribeImported(from: resume ? item.transcribedThrough : 0)
+    }
+
+    private func transcribeImported(from start: TimeInterval) {
         player.pause()
         transcribing = true
+        transcriptPaused = false
+        let kept = item.lines
         let service = SpeechSession()
         speech = service
+        service.onProgress = { fraction in
+            transcriptProgress = fraction
+            item.transcribedThrough = service.submitted
+        }
         service.onLines = { lines in
-            let cues = lines.filter { !$0.provisional }
-            let span = max(player.duration, 1)
-            item.lines = cues.enumerated().map { index, line in
-                TranscriptCue(id: line.id, time: line.time > 0 ? line.time : span * Double(index) / Double(max(cues.count, 1)), text: line.text)
+            let fresh = lines.filter { !$0.provisional }.map {
+                TranscriptCue(id: $0.id, time: min(max(0, $0.time), max(item.duration, player.duration, 0.01)), text: $0.text)
             }
-            item.transcript = cues.map(\.text).joined(separator: "\n")
+            item.lines = kept + fresh
+            item.transcript = item.lines.map(\.text).joined(separator: "\n")
         }
         Task {
-            defer { transcribing = false }
+            defer { transcribing = false; transcriptPaused = false }
             do {
-                try await service.transcribeFile(store.audioURL(for: item), localeID: "zh-CN")
+                try await service.transcribeFile(store.audioURL(for: item), localeID: "zh-CN", from: start)
+                item.transcribedThrough = max(item.duration, player.duration)
                 save()
-            } catch { errorMessage = error.localizedDescription }
+            } catch {
+                item.transcribedThrough = service.submitted
+                save()
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }

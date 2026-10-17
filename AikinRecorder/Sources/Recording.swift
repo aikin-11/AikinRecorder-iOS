@@ -22,12 +22,13 @@ struct Recording: Identifiable, Codable, Hashable {
     var lines: [TranscriptCue]
     var summary: String
     var marks: [RecordingMark]
+    var transcribedThrough: TimeInterval
 
     enum CodingKeys: String, CodingKey {
-        case id, title, fileName, createdAt, duration, transcript, lines, summary, marks
+        case id, title, fileName, createdAt, duration, transcript, lines, summary, marks, transcribedThrough
     }
 
-    init(id: UUID, title: String, fileName: String, createdAt: Date, duration: TimeInterval, transcript: String, lines: [TranscriptCue] = [], summary: String = "", marks: [RecordingMark] = []) {
+    init(id: UUID, title: String, fileName: String, createdAt: Date, duration: TimeInterval, transcript: String, lines: [TranscriptCue] = [], summary: String = "", marks: [RecordingMark] = [], transcribedThrough: TimeInterval = 0) {
         self.id = id
         self.title = title
         self.fileName = fileName
@@ -37,6 +38,7 @@ struct Recording: Identifiable, Codable, Hashable {
         self.lines = lines
         self.summary = summary
         self.marks = marks
+        self.transcribedThrough = transcribedThrough
     }
 
     init(from decoder: Decoder) throws {
@@ -50,6 +52,7 @@ struct Recording: Identifiable, Codable, Hashable {
         lines = try container.decodeIfPresent([TranscriptCue].self, forKey: .lines) ?? []
         summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
         marks = try container.decodeIfPresent([RecordingMark].self, forKey: .marks) ?? []
+        transcribedThrough = try container.decodeIfPresent(TimeInterval.self, forKey: .transcribedThrough) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
@@ -63,6 +66,7 @@ struct Recording: Identifiable, Codable, Hashable {
         try container.encode(lines, forKey: .lines)
         try container.encode(summary, forKey: .summary)
         try container.encode(marks, forKey: .marks)
+        try container.encode(transcribedThrough, forKey: .transcribedThrough)
     }
 
     static func meetingTitle(at date: Date = .now) -> String {

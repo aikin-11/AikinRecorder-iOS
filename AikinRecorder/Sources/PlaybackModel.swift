@@ -9,6 +9,7 @@ final class PlaybackModel {
     var position: TimeInterval = 0
     var duration: TimeInterval = 0
     var errorMessage: String?
+    private var scrubbing = false
 
     func load(_ url: URL) {
         ticker?.cancel()
@@ -20,7 +21,7 @@ final class PlaybackModel {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(150))
                     guard let self, let player = self.player else { return }
-                    self.position = player.currentTime
+                    if !self.scrubbing { self.position = player.currentTime }
                     self.isPlaying = player.isPlaying
                 }
             }
@@ -42,6 +43,9 @@ final class PlaybackModel {
     }
 
     func seek(_ time: TimeInterval) { player?.currentTime = min(max(0, time), duration); position = player?.currentTime ?? 0 }
+    func beginScrub() { scrubbing = true }
+    func scrub(to time: TimeInterval) { position = min(max(0, time), duration) }
+    func endScrub() { scrubbing = false; seek(position) }
 
     func play(from time: TimeInterval) {
         seek(time)

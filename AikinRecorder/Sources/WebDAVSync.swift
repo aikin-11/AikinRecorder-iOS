@@ -59,8 +59,13 @@ enum WebDAVSync {
     static func sync(_ store: LibraryStore) async throws {
         try await test()
         try await ensureFolder(WebDAVSettings.remotePath)
+        let present = Set(parseResponses(try await request(method: "PROPFIND", path: WebDAVSettings.remotePath, body: propfindBody, depth: "1")).map {
+            normalized($0.path).split(separator: "/").last.map(String.init) ?? ""
+        })
         for item in store.recordings {
-            let folder = WebDAVSettings.remotePath + "/" + Recording.cleanTitle(item.title)
+            let name = Recording.cleanTitle(item.title)
+            if present.contains(name) { continue }
+            let folder = WebDAVSettings.remotePath + "/" + name
             try await ensureFolder(folder)
             let audio = store.audioURL(for: item)
             if FileManager.default.fileExists(atPath: audio.path) {
@@ -86,7 +91,9 @@ enum WebDAVSync {
         var result: [WebDAVBackup] = []
         for entry in parseResponses(listing) {
             let key = normalized(entry.path)
-            guard key != parent, key.hasPrefix(parent) else { continue }
+            guard !key.isEmpty, key != parent else { continue }
+            let child = key.hasPrefix(parent + "/") || !key.contains("/") || key.hasSuffix("/" + (parent.split(separator: "/").last.map(String.init) ?? parent))
+            guard parent.isEmpty || child || key.contains(parent) else { continue }
             if entry.isCollection {
                 let children = (try? parseResponses(await request(method: "PROPFIND", path: "/" + key, body: propfindBody, depth: "1"))) ?? []
                 let bytes = children.filter { !$0.isCollection }.reduce(Int64(0)) { $0 + $1.bytes }

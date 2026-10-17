@@ -64,6 +64,7 @@ struct RecorderView: View {
                 }
                 controls.padding(.bottom, 20)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Color.black)
             .navigationTitle("录音实时转写")
             .navigationBarTitleDisplayMode(.inline)

@@ -4,11 +4,13 @@ cd "$(dirname "$0")/.."
 python3 scripts/generate_project.py
 mkdir -p build/artifacts
 xcodebuild -version | tee build/artifacts/xcode-version.txt
+set +e
 xcodebuild -project AikinRecorder.xcodeproj -scheme AikinRecorder \
   -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
-  -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGN_IDENTITY='' build 2>&1 | tee build/artifacts/device-build.log
+  -derivedDataPath build/device CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY=- build 2>&1 | tee build/artifacts/device-build.log
 status=${PIPESTATUS[0]}
+set -e
 if [ "$status" -ne 0 ]; then
   grep -E "error:|fatal error:|BUILD FAILED" build/artifacts/device-build.log | head -40 | while IFS= read -r line; do
     echo "::error::$line"
@@ -18,6 +20,10 @@ fi
 app=build/device/Build/Products/Release-iphoneos/AikinRecorder.app
 test -x "$app/AikinRecorder"
 xcrun lipo "$app/AikinRecorder" -verify_arch arm64
+if [ -d "$app/PlugIns/AikinRecorderLiveActivity.appex" ]; then
+  codesign --remove-signature "$app/PlugIns/AikinRecorderLiveActivity.appex"
+fi
+codesign --remove-signature "$app"
 if codesign -dv "$app" >/dev/null 2>&1; then
   echo 'Expected an unsigned app, but found a code signature.' >&2
   exit 1

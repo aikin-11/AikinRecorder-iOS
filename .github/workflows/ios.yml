@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -21,6 +21,15 @@ jobs:
         uses: actions/checkout@v4
       - name: Build unsigned device app and IPA
         run: bash scripts/build_unsigned.sh
+      - name: Publish failure log
+        if: failure()
+        run: |
+          git config user.name Aikin
+          git config user.email 0212ac@gmail.com
+          cp build/artifacts/device-build.log failure.log || true
+          git add -f failure.log
+          git commit -m "Record device build log"
+          git push origin HEAD:ci-log
       - name: Upload unsigned IPA immediately
         uses: actions/upload-artifact@v4
         with:

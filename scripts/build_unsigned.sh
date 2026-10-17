@@ -26,7 +26,7 @@ if codesign -dv "$app" >/dev/null 2>&1; then
 fi
 mkdir -p build/package/Payload
 ditto "$app" build/package/Payload/AikinRecorder.app
-(cd build/package && ditto -c -k --keepParent Payload ../artifacts/AikinRecorder-1.18.0-unsigned.ipa)
-shasum -a 256 build/artifacts/AikinRecorder-1.18.0-unsigned.ipa > build/artifacts/SHA256SUMS.txt
+(cd build/package && ditto -c -k --keepParent Payload ../artifacts/AikinRecorder-1.19.0-unsigned.ipa)
+shasum -a 256 build/artifacts/AikinRecorder-1.19.0-unsigned.ipa > build/artifacts/SHA256SUMS.txt
 echo 'Unsigned IPA created. It must be signed with your certificate and provisioning profile before installation.'
 

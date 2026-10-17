@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct LibraryView: View {
@@ -41,9 +42,8 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(items) { item in
-                            SwipeDeleteRow(onDelete: { itemToDelete = item }) {
-                                Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id, queued: store.queuedIDs.contains(item.id)) }
-                                    .buttonStyle(.plain)
+                            SwipeDeleteRow(onDelete: { itemToDelete = item }, onOpen: { selectedItem = item }) {
+                                RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id, queued: store.queuedIDs.contains(item.id))
                             }
                             .listRowBackground(Color.black)
                             .listRowSeparator(.hidden)
@@ -190,10 +190,10 @@ struct LibraryView: View {
 
 private struct SwipeDeleteRow<Content: View>: View {
     let onDelete: () -> Void
+    let onOpen: () -> Void
     @ViewBuilder var content: () -> Content
     @State private var offset: CGFloat = 0
     @State private var base: CGFloat = 0
-    @State private var horizontal = false
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -211,29 +211,93 @@ private struct SwipeDeleteRow<Content: View>: View {
             .opacity(offset < -6 ? 1 : 0)
             content()
                 .offset(x: offset)
+                .overlay(
+                    HorizontalRowGesture(base: base) { value in
+                        offset = min(0, max(-104, value))
+                    } onEnd: { value in
+                        let open = value < -48
+                        base = open ? -96 : 0
+                        withAnimation(.snappy) { offset = base }
+                    } onTap: {
+                        if base < -8 {
+                            base = 0
+                            withAnimation(.snappy) { offset = 0 }
+                        } else {
+                            onOpen()
+                        }
+                    }
+                )
         }
         .clipped()
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 12, coordinateSpace: .local)
-                .onChanged { value in
-                    let dx = value.translation.width
-                    let dy = value.translation.height
-                    if !horizontal {
-                        guard abs(dx) > 14, abs(dx) > abs(dy) + 6 else { return }
-                        horizontal = true
-                    }
-                    offset = min(0, max(-104, base + dx))
-                }
-                .onEnded { value in
-                    let dx = value.translation.width
-                    let dy = value.translation.height
-                    horizontal = false
-                    guard abs(dx) > abs(dy) else { return }
-                    let open = base + dx < -48
-                    base = open ? -96 : 0
-                    withAnimation(.snappy) { offset = base }
-                }
-        )
+    }
+}
+
+private struct HorizontalRowGesture: UIViewRepresentable {
+    var base: CGFloat
+    var onChange: (CGFloat) -> Void
+    var onEnd: (CGFloat) -> Void
+    var onTap: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(base: base, onChange: onChange, onEnd: onEnd, onTap: onTap) }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
+        pan.delegate = context.coordinator
+        pan.cancelsTouchesInView = true
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
+        tap.require(toFail: pan)
+        view.addGestureRecognizer(pan)
+        view.addGestureRecognizer(tap)
+        context.coordinator.pan = pan
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.base = base
+        context.coordinator.onChange = onChange
+        context.coordinator.onEnd = onEnd
+        context.coordinator.onTap = onTap
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var base: CGFloat
+        var onChange: (CGFloat) -> Void
+        var onEnd: (CGFloat) -> Void
+        var onTap: () -> Void
+        weak var pan: UIPanGestureRecognizer?
+
+        init(base: CGFloat, onChange: @escaping (CGFloat) -> Void, onEnd: @escaping (CGFloat) -> Void, onTap: @escaping () -> Void) {
+            self.base = base
+            self.onChange = onChange
+            self.onEnd = onEnd
+            self.onTap = onTap
+        }
+
+        @objc func pan(_ gesture: UIPanGestureRecognizer) {
+            let dx = gesture.translation(in: gesture.view).x
+            switch gesture.state {
+            case .changed: onChange(base + dx)
+            case .ended, .cancelled, .failed: onEnd(base + dx)
+            default: break
+            }
+        }
+
+        @objc func tap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+            onTap()
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.x) > abs(velocity.y)
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+            other.view is UIScrollView
+        }
     }
 }
 

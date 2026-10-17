@@ -12,9 +12,11 @@ final class LibraryStore {
     var transcribingID: UUID?
     var transcriptProgress = 0.0
     var transcriptPaused = false
+    var transcriptTick = 0
     let directory: URL
     private var speech: SpeechSession?
     private var lastTranscriptSave: Date?
+    private var latestLines: [TranscriptCue] = []
     private var silence: AVAudioPlayer?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private let indexURL: URL
@@ -192,13 +194,14 @@ final class LibraryStore {
             let fresh = lines.filter { !$0.provisional }.map {
                 TranscriptCue(id: $0.id, time: max(0, $0.time), text: $0.text)
             }
-            self.recordings[index].lines = kept + fresh
-            self.recordings[index].transcript = self.recordings[index].lines.map(\.text).joined(separator: "\n")
+            self.latestLines = kept + fresh
             let now = Date()
-            if self.lastTranscriptSave == nil || now.timeIntervalSince(self.lastTranscriptSave!) > 1.5 {
-                self.lastTranscriptSave = now
-                try? self.persist()
-            }
+            guard self.lastTranscriptSave == nil || now.timeIntervalSince(self.lastTranscriptSave!) > 0.6 else { return }
+            self.lastTranscriptSave = now
+            self.recordings[index].lines = self.latestLines
+            self.recordings[index].transcript = self.latestLines.map(\.text).joined(separator: "\n")
+            self.transcriptTick += 1
+            try? self.persist()
         }
         holdBackground()
         RecordingActivity.start(title: item.title, elapsed: 0)
@@ -217,11 +220,19 @@ final class LibraryStore {
     func toggleTranscriptPause() {
         transcriptPaused.toggle()
         speech?.setFilePaused(transcriptPaused)
+        if transcriptPaused {
+            RecordingActivity.end()
+            return
+        }
         if let id = transcribingID, let index = recordings.firstIndex(where: { $0.id == id }) {
             recordings[index].transcribedThrough = speech?.submitted ?? recordings[index].transcribedThrough
             try? persist()
             pushTranscriptActivity(title: recordings[index].title, fraction: transcriptProgress)
         }
+    }
+
+    func hideIsland() {
+        RecordingActivity.end()
     }
 
     private func pushTranscriptActivity(title: String, fraction: Double) {
@@ -234,9 +245,15 @@ final class LibraryStore {
 
     private func finishTranscription() {
         if let id = transcribingID, let index = recordings.firstIndex(where: { $0.id == id }) {
+            if !latestLines.isEmpty {
+                recordings[index].lines = latestLines
+                recordings[index].transcript = latestLines.map(\.text).joined(separator: "\n")
+            }
             recordings[index].transcribedThrough = max(recordings[index].transcribedThrough, speech?.submitted ?? 0)
+            transcriptTick += 1
             try? persist()
         }
+        latestLines = []
         transcribingID = nil
         transcriptPaused = false
         speech = nil

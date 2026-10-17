@@ -42,25 +42,13 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(items) { item in
-                            Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id) }
-                                .buttonStyle(.plain)
-                                .listRowBackground(Color.black)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-                                .contextMenu {
-                                    Button("打开", systemImage: "doc.text") { selectedItem = item }
-                                    Button("删除", systemImage: "trash") { itemToDelete = item }
-                                }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button { itemToDelete = item } label: {
-                                        Text("删除")
-                                            .foregroundStyle(.white)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 8)
-                                            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white, lineWidth: 1))
-                                    }
-                                    .tint(.black)
-                                }
+                            SwipeDeleteRow(onDelete: { itemToDelete = item }) {
+                                Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id) }
+                                    .buttonStyle(.plain)
+                            }
+                            .listRowBackground(Color.black)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                         }
                     }
                     .listStyle(.plain)
@@ -109,6 +97,18 @@ struct LibraryView: View {
                     .glassEffect(.regular.interactive(), in: .circle)
                     .disabled(importing)
                     .accessibilityLabel("新建")
+                    .overlay(alignment: .bottomTrailing) {
+                        if showingAdd {
+                            VStack(alignment: .leading, spacing: 0) {
+                                addChoice("录音实时转写") { showingAdd = false; showingRecorder = true }
+                                addChoice("导入外部音频") { showingAdd = false; importAudio() }
+                            }
+                            .frame(width: 180)
+                            .background(Color.black, in: RoundedRectangle(cornerRadius: 14))
+                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.7), lineWidth: 0.8))
+                            .offset(y: -56)
+                        }
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -118,11 +118,6 @@ struct LibraryView: View {
             .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item, initialQuery: query) }
             .sheet(isPresented: $showingRecorder) { RecorderView() }
             .overlay { if importing { ProgressView("正在导入…").padding(24).glassEffect(in: .rect(cornerRadius: 20)) } }
-            .confirmationDialog("选择操作", isPresented: $showingAdd, titleVisibility: .visible) {
-                Button("录音实时转写") { showingRecorder = true }
-                Button("导入外部音频") { importAudio() }
-                Button("取消", role: .cancel) { }
-            }
             .confirmationDialog("确定要删除吗？", isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }), titleVisibility: .visible) {
                 Button("删除录音", role: .destructive) {
                     if let item = itemToDelete { do { try store.remove(item) } catch { errorMessage = error.localizedDescription } }
@@ -178,6 +173,20 @@ struct LibraryView: View {
         }
     }
 
+    private func addChoice(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.body)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.bordered)
+        .tint(.white)
+    }
+
     private func statCard(_ title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption).foregroundStyle(.secondary)
@@ -201,6 +210,40 @@ struct LibraryView: View {
         }
     }
 
+}
+
+private struct SwipeDeleteRow<Content: View>: View {
+    let onDelete: () -> Void
+    @ViewBuilder var content: () -> Content
+    @State private var offset: CGFloat = 0
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(action: onDelete) {
+                Text("删除")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 76, height: 40)
+                    .background(Color.black, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 4)
+            content()
+                .offset(x: offset)
+                .gesture(
+                    DragGesture(minimumDistance: 16)
+                        .onChanged { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            offset = min(0, max(-100, value.translation.width))
+                        }
+                        .onEnded { value in
+                            withAnimation(.snappy) { offset = value.translation.width < -48 ? -96 : 0 }
+                        }
+                )
+        }
+        .clipped()
+    }
 }
 
 private struct RecordingRow: View {

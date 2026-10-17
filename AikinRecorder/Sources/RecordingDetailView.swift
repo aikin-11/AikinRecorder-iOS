@@ -66,9 +66,13 @@ struct RecordingDetailView: View {
                 .onChange(of: item.lines.count) {
                     if let id = item.lines.last?.id { proxy.scrollTo(id, anchor: .bottom) }
                 }
-                .onChange(of: item.transcript) {
-                    guard store.transcribingID == item.id, let id = item.lines.last?.id else { return }
-                    proxy.scrollTo(id, anchor: .bottom)
+                .onChange(of: store.transcriptTick) {
+                    guard store.transcribingID == item.id, let latest = store.recordings.first(where: { $0.id == item.id }) else { return }
+                    item.lines = latest.lines
+                    item.transcript = latest.transcript
+                    if let id = item.lines.last?.id {
+                        proxy.scrollTo(id, anchor: .bottom)
+                    }
                 }
                 .onChange(of: activeLineID) {
                     guard player.isPlaying, let id = activeLineID else { return }

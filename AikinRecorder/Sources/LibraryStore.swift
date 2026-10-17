@@ -63,11 +63,7 @@ final class LibraryStore {
         let target = directory.appendingPathComponent(fileName)
         try await Task.detached(priority: .userInitiated) {
             if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
-            do { try FileManager.default.moveItem(at: source, to: target) }
-            catch {
-                try FileManager.default.copyItem(at: source, to: target)
-                try? FileManager.default.removeItem(at: source)
-            }
+            try FileManager.default.copyItem(at: source, to: target)
         }.value
         let item = Recording(id: id, title: Recording.cleanTitle(source.deletingPathExtension().lastPathComponent),
                              fileName: fileName, createdAt: .now, duration: duration.isFinite ? duration : 0, transcript: "")

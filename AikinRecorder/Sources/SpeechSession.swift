@@ -83,11 +83,9 @@ final class SpeechSession {
 
     private func apply(text: String, provisional: Bool) {
         if let index = lines.indices.last, lines[index].provisional {
-            if provisional {
-                lines[index].text = text
-                return
-            }
-            lines.remove(at: index)
+            lines[index].text = text
+            lines[index].provisional = provisional
+            return
         }
         lines.append(TranscriptLine(time: clock?() ?? 0, text: text, provisional: provisional))
     }

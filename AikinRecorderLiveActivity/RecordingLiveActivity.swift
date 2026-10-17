@@ -40,7 +40,6 @@ struct RecordingLiveActivity: Widget {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text("AR").font(.subheadline.weight(.bold))
                     Text("AikinRec")
                         .font(.subheadline.weight(.semibold))
                 }

@@ -90,7 +90,7 @@ private struct WebDAVSettingsView: View {
                 TextField("账号", text: $webUser).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("密码", text: $webPassword)
                 TextField("保存位置", text: $webPath).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Toggle("每天定时同步", isOn: $syncEnabled)
+                Toggle("每天定时同步", isOn: $syncEnabled).tint(.green)
                 if syncEnabled {
                     DatePicker("同步时间", selection: $syncTime, displayedComponents: .hourAndMinute)
                 }

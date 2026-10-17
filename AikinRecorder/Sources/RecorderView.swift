@@ -13,8 +13,7 @@ struct RecorderView: View {
     var body: some View {
         @Bindable var model = model
         NavigationStack {
-            VStack(spacing: 20) {
-                WaveformView(levels: model.levels, moving: model.state == .recording).frame(height: 88).padding(.horizontal)
+            VStack(spacing: 12) {
                 HStack {
                     Text(Recording.timeText(model.elapsed)).font(.title2.monospacedDigit())
                     Spacer()
@@ -65,9 +64,10 @@ struct RecorderView: View {
                 }
                 controls.padding(.bottom, 20)
             }
-            .padding(.top)
             .background(Color.black)
-            .navigationTitle("录音实时转写").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("录音实时转写")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(model.state == .saved ? "完成" : "关闭") {

@@ -24,12 +24,8 @@ struct RecordingDetailView: View {
             HStack {
                 Text(item.createdAt, format: .dateTime.year().month().day().hour().minute())
                 Spacer()
-                Text(item.fileName.split(separator: ".").last?.uppercased() ?? "AUDIO")
+                Text("\(item.transcript.count) 字").monospacedDigit()
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal)
-            HStack {
-                Spacer()
-                Text("\(item.transcript.count) 字").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            }.padding(.horizontal)
             ScrollViewReader { proxy in
                 ScrollView {
                     if item.lines.isEmpty {
@@ -43,8 +39,8 @@ struct RecordingDetailView: View {
                             ForEach(item.lines) { line in
                                 HStack(alignment: .top, spacing: 12) {
                                     HStack(spacing: 2) {
-                                        Text(Recording.timeText(sentenceStart(line)))
-                                        if item.marks.contains(where: { abs($0.time - line.time) < 1.2 || abs($0.time - sentenceStart(line)) < 1.2 }) {
+                                        Text(Recording.timeText(line.time))
+                                        if item.marks.contains(where: { abs($0.time - line.time) < 1.2 }) {
                                             Image(systemName: "bookmark.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                                         }
                                     }
@@ -57,7 +53,7 @@ struct RecordingDetailView: View {
                                         .padding(8)
                                         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(activeLineID == line.id ? Color.white : Color.clear, lineWidth: 1.4))
                                         .contentShape(Rectangle())
-                                        .onTapGesture { player.play(from: sentenceStart(line)) }
+                                        .onTapGesture { player.play(from: line.time) }
                                 }
                                 .id(line.id)
                             }
@@ -173,13 +169,7 @@ struct RecordingDetailView: View {
 
     private var activeLineID: UUID? {
         let sorted = item.lines.sorted { $0.time < $1.time }
-        return sorted.first { $0.time > player.position + 0.05 }?.id ?? sorted.last?.id
-    }
-
-    private func sentenceStart(_ line: TranscriptCue) -> TimeInterval {
-        let sorted = item.lines.sorted { $0.time < $1.time }
-        guard let index = sorted.firstIndex(where: { $0.id == line.id }), index > 0 else { return 0 }
-        return sorted[index - 1].time
+        return sorted.last { $0.time <= player.position + 0.2 }?.id ?? sorted.first?.id
     }
 
     private func highlighted(_ text: String) -> AttributedString {
@@ -240,7 +230,7 @@ struct RecordingDetailView: View {
             let cues = lines.filter { !$0.provisional }
             let span = max(player.duration, 1)
             item.lines = cues.enumerated().map { index, line in
-                TranscriptCue(id: line.id, time: line.time > 0 ? line.time : span * Double(index + 1) / Double(max(cues.count, 1)), text: line.text)
+                TranscriptCue(id: line.id, time: line.time > 0 ? line.time : span * Double(index) / Double(max(cues.count, 1)), text: line.text)
             }
             item.transcript = cues.map(\.text).joined(separator: "\n")
         }

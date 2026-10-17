@@ -84,12 +84,16 @@ enum WebDAVSync {
         let listing = try await request(method: "PROPFIND", path: WebDAVSettings.remotePath, body: propfindBody, depth: "1")
         let parent = normalized(WebDAVSettings.remotePath)
         var result: [WebDAVBackup] = []
-        for folder in parseResponses(listing) where folder.isCollection {
-            let key = normalized(folder.path)
+        for entry in parseResponses(listing) {
+            let key = normalized(entry.path)
             guard key != parent, key.hasPrefix(parent) else { continue }
-            let children = (try? parseResponses(await request(method: "PROPFIND", path: "/" + key, body: propfindBody, depth: "1"))) ?? []
-            let bytes = children.filter { !$0.isCollection }.reduce(Int64(0)) { $0 + $1.bytes }
-            result.append(WebDAVBackup(path: "/" + key, name: key.split(separator: "/").last.map(String.init) ?? key, bytes: bytes))
+            if entry.isCollection {
+                let children = (try? parseResponses(await request(method: "PROPFIND", path: "/" + key, body: propfindBody, depth: "1"))) ?? []
+                let bytes = children.filter { !$0.isCollection }.reduce(Int64(0)) { $0 + $1.bytes }
+                result.append(WebDAVBackup(path: "/" + key, name: key.split(separator: "/").last.map(String.init) ?? key, bytes: bytes))
+            } else {
+                result.append(WebDAVBackup(path: "/" + key, name: key.split(separator: "/").last.map(String.init) ?? key, bytes: entry.bytes))
+            }
         }
         return result
     }
@@ -112,11 +116,21 @@ enum WebDAVSync {
 
     private static func parseResponses(_ data: Data) -> [(path: String, bytes: Int64, isCollection: Bool)] {
         let xml = String(data: data, encoding: .utf8) ?? ""
-        return xml.components(separatedBy: "<D:response>").dropFirst().compactMap { block in
-            guard let hrefStart = block.range(of: "<D:href>"), let hrefEnd = block.range(of: "</D:href>") else { return nil }
-            let href = String(block[hrefStart.upperBound..<hrefEnd.lowerBound]).removingPercentEncoding ?? ""
-            let bytes = Int64(block.slice(after: "<D:getcontentlength>", before: "</D:getcontentlength>")) ?? 0
-            return (path: href, bytes: bytes, isCollection: block.contains("<D:collection"))
+        guard let regex = try? NSRegularExpression(pattern: "<[^>]*:?response\\b[^>]*>([\\s\\S]*?)</[^>]*:?response>", options: [.caseInsensitive]) else { return [] }
+        let range = NSRange(xml.startIndex..., in: xml)
+        return regex.matches(in: xml, range: range).compactMap { match in
+            guard let blockRange = Range(match.range(at: 1), in: xml) else { return nil }
+            let block = String(xml[blockRange])
+            guard let hrefRegex = try? NSRegularExpression(pattern: "<[^>]*:?href>([^<]+)", options: [.caseInsensitive]),
+                  let hrefMatch = hrefRegex.firstMatch(in: block, range: NSRange(block.startIndex..., in: block)),
+                  let hrefRange = Range(hrefMatch.range(at: 1), in: block) else { return nil }
+            var href = String(block[hrefRange]).removingPercentEncoding ?? ""
+            if href.contains("://"), let path = URL(string: href)?.path { href = path }
+            let lengthRegex = try? NSRegularExpression(pattern: "<[^>]*:?getcontentlength>(\\d+)", options: [.caseInsensitive])
+            let bytes = lengthRegex.flatMap { pattern in
+                pattern.firstMatch(in: block, range: NSRange(block.startIndex..., in: block)).flatMap { Range($0.range(at: 1), in: block) }.flatMap { Int64(block[$0]) }
+            } ?? 0
+            return (path: href, bytes: bytes, isCollection: block.range(of: "collection", options: .caseInsensitive) != nil)
         }
     }
 

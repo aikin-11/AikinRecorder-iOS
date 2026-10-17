@@ -9,7 +9,7 @@ enum SystemPresenter {
 
     static func pickAudio(_ completion: @escaping ([URL]) -> Void) {
         let types = [UTType.mpeg4Audio, .mp3, .wav, .aiff, .audio, UTType(filenameExtension: "m4a"), UTType(filenameExtension: "aac")].compactMap { $0 }
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: false)
         picker.allowsMultipleSelection = true
         let delegate = AudioPickerDelegate(completion: completion)
         picker.delegate = delegate

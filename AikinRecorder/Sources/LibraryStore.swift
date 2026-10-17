@@ -16,6 +16,7 @@ final class LibraryStore {
     var transcriptTick = 0
     let directory: URL
     private var speech: SpeechSession?
+    private var transcriptionTask: Task<Void, Never>?
     private var transcriptionQueue: [(id: UUID, start: TimeInterval)] = []
     private var lastTranscriptSave: Date?
     private var latestLines: [TranscriptCue] = []
@@ -217,11 +218,12 @@ final class LibraryStore {
         holdBackground()
         RecordingActivity.start(title: item.title, elapsed: 0)
         pushTranscriptActivity(title: item.title, fraction: transcriptProgress)
-        Task { [weak self] in
-            defer { self?.finishTranscription() }
+        transcriptionTask = Task { [weak self] in
+            defer { self?.finishTranscription(for: item.id) }
             do {
                 guard let self else { return }
                 try await service.transcribeFile(self.audioURL(for: item), localeID: "zh-CN", from: start)
+            } catch is CancellationError {
             } catch {
                 self?.errorMessage = error.localizedDescription
             }
@@ -229,6 +231,16 @@ final class LibraryStore {
     }
 
     func toggleTranscriptPause() {
+        guard let id = transcribingID else { return }
+        if !transcriptionQueue.isEmpty {
+            if let index = recordings.firstIndex(where: { $0.id == id }) {
+                recordings[index].transcribedThrough = speech?.submitted ?? recordings[index].transcribedThrough
+                try? persist()
+            }
+            speech?.setFilePaused(true)
+            transcriptionTask?.cancel()
+            return
+        }
         transcriptPaused.toggle()
         speech?.setFilePaused(transcriptPaused)
         if transcriptPaused {
@@ -254,8 +266,9 @@ final class LibraryStore {
         RecordingActivity.update(elapsed: fraction, paused: transcriptPaused, snippet: transcriptPaused ? "转写已暂停 \(percent)" : "正在转写 \(percent)", captions: [percent], levels: [], markedUntil: .distantPast, progress: fraction)
     }
 
-    private func finishTranscription() {
-        if let id = transcribingID, let index = recordings.firstIndex(where: { $0.id == id }) {
+    private func finishTranscription(for id: UUID) {
+        guard transcribingID == id else { return }
+        if let index = recordings.firstIndex(where: { $0.id == id }) {
             if !latestLines.isEmpty {
                 recordings[index].lines = latestLines
                 recordings[index].transcript = latestLines.map(\.text).joined(separator: "\n")

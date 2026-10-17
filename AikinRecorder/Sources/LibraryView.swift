@@ -41,23 +41,13 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(items) { item in
-                            Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id, queued: store.queuedIDs.contains(item.id)) }
-                                .buttonStyle(.plain)
-                                .listRowBackground(Color.black)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button { itemToDelete = item } label: {
-                                        Text("删除")
-                                            .font(.body.weight(.medium))
-                                            .foregroundStyle(.white)
-                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                            .frame(width: 72)
-                                            .background(Color.black)
-                                            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.35), lineWidth: 0.7))
-                                    }
-                                    .tint(.black)
-                                }
+                            SwipeDeleteRow(onDelete: { itemToDelete = item }) {
+                                Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id, queued: store.queuedIDs.contains(item.id)) }
+                                    .buttonStyle(.plain)
+                            }
+                            .listRowBackground(Color.black)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                         }
                     }
                     .listStyle(.plain)
@@ -196,6 +186,55 @@ struct LibraryView: View {
         }
     }
 
+}
+
+private struct SwipeDeleteRow<Content: View>: View {
+    let onDelete: () -> Void
+    @ViewBuilder var content: () -> Content
+    @State private var offset: CGFloat = 0
+    @State private var base: CGFloat = 0
+    @State private var horizontal = false
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(action: onDelete) {
+                Text("删除")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.white)
+                    .frame(maxHeight: .infinity)
+                    .frame(width: 72)
+                    .background(Color.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.white.opacity(0.9), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .opacity(offset < -6 ? 1 : 0)
+            content()
+                .offset(x: offset)
+        }
+        .clipped()
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 12, coordinateSpace: .local)
+                .onChanged { value in
+                    let dx = value.translation.width
+                    let dy = value.translation.height
+                    if !horizontal {
+                        guard abs(dx) > 14, abs(dx) > abs(dy) + 6 else { return }
+                        horizontal = true
+                    }
+                    offset = min(0, max(-104, base + dx))
+                }
+                .onEnded { value in
+                    let dx = value.translation.width
+                    let dy = value.translation.height
+                    horizontal = false
+                    guard abs(dx) > abs(dy) else { return }
+                    let open = base + dx < -48
+                    base = open ? -96 : 0
+                    withAnimation(.snappy) { offset = base }
+                }
+        )
+    }
 }
 
 private struct RecordingRow: View {

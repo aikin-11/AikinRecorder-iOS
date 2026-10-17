@@ -21,7 +21,8 @@ PY
 xcodebuild -project AikinRecorder.xcodeproj -scheme AikinRecorder \
   -configuration Debug -destination "platform=iOS Simulator,id=$device" \
   -derivedDataPath build/simulator -parallel-testing-enabled NO \
-  -resultBundlePath build/artifacts/Tests.xcresult CODE_SIGNING_ALLOWED=NO test \
+  -resultBundlePath build/artifacts/Tests.xcresult CODE_SIGNING_ALLOWED=NO \
+  ONLY_ACTIVE_ARCH=YES ARCHS="$(uname -m)" SWIFT_COMPILATION_MODE=wholemodule test \
   2>&1 | tee build/artifacts/simulator-test.log
 xcrun simctl install "$device" build/simulator/Build/Products/Debug-iphonesimulator/AikinRecorder.app
 xcrun simctl status_bar "$device" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100

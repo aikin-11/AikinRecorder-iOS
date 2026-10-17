@@ -75,4 +75,3 @@ final class RecordingTests: XCTestCase {
         XCTAssertEqual(store.recordings.map(\.fileName), ["orphan.m4a"])
     }
 }
-

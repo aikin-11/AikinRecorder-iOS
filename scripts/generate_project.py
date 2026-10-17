@@ -29,7 +29,7 @@ def refs(ids):
 
 app_sources, test_sources, resources, source_refs, test_refs, resource_refs = [], [], [], [], [], []
 widget_sources, widget_refs = [], []
-shared_for_widget = {'AikinRecorder/Sources/Recording.swift', 'AikinRecorder/Sources/RecordingActivity.swift'}
+shared_for_widget = {'AikinRecorder/Sources/Recording.swift', 'AikinRecorder/Sources/RecordingActivityAttributes.swift'}
 for path in sorted((ROOT / 'AikinRecorder/Sources').glob('*.swift')) + sorted((ROOT / 'Tests').glob('*.swift')):
     relative = path.relative_to(ROOT).as_posix()
     ref = add(relative, '{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ' + quote(relative) + '; sourceTree = SOURCE_ROOT;}')
@@ -77,7 +77,7 @@ for owner in ['project', 'app', 'test', 'widget']:
         if owner == 'test':
             cfg.update(PRODUCT_NAME='AikinRecorderTests', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.tests', GENERATE_INFOPLIST_FILE='YES', TEST_HOST='$(BUILT_PRODUCTS_DIR)/AikinRecorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AikinRecorder', BUNDLE_LOADER='$(TEST_HOST)', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @loader_path/Frameworks', TARGETED_DEVICE_FAMILY='1,2')
         if owner == 'widget':
-            cfg.update(PRODUCT_NAME='AikinRecorderLiveActivity', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.liveactivity', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorderLiveActivity/Info.plist', GENERATE_INFOPLIST_FILE='NO', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', CURRENT_PROJECT_VERSION='1', MARKETING_VERSION='1.0.0')
+            cfg.update(PRODUCT_NAME='AikinRecorderLiveActivity', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.liveactivity', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorderLiveActivity/Info.plist', GENERATE_INFOPLIST_FILE='NO', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', CURRENT_PROJECT_VERSION='1', MARKETING_VERSION='1.0.0', APPLICATION_EXTENSION_API_ONLY='YES', CODE_SIGNING_REQUIRED='NO')
         configs.append(add(owner + mode, '{isa = XCBuildConfiguration; buildSettings = ' + settings(cfg) + '; name = ' + mode + ';}'))
     config_lists[owner] = add(owner + 'Configs', '{isa = XCConfigurationList; buildConfigurations = ' + refs(configs) + '; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;}')
 

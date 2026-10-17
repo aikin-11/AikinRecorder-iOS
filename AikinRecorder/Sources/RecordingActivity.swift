@@ -1,16 +1,6 @@
 import ActivityKit
 import Foundation
 
-struct RecordingActivityAttributes: ActivityAttributes {
-    struct ContentState: Codable, Hashable {
-        var elapsed: TimeInterval
-        var paused: Bool
-        var snippet: String
-    }
-
-    var title: String
-}
-
 enum RecordingActivity {
     @MainActor
     static func start(title: String, elapsed: TimeInterval) {

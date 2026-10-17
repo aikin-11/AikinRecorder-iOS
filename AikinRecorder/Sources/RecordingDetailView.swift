@@ -105,7 +105,9 @@ struct RecordingDetailView: View {
         let service = SpeechSession()
         speech = service
         let previousText = item.transcript
-        service.onText = { text in item.transcript = text }
+        service.onLines = { lines in
+            item.transcript = lines.filter { !$0.provisional }.map(\.text).joined(separator: "\n")
+        }
         service.onStatus = { text in status = text }
         transcriptionTask = Task {
             defer { transcribing = false }

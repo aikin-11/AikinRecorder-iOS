@@ -86,7 +86,7 @@ final class SpeechSession {
         continuation = builder
         try await analyzer.start(inputSequence: stream)
         onStatus?(start > 0.5 ? "继续转写…" : "正在本地转写…")
-        let reader = AVAudioFile(forReading: url)
+        let reader = try AVAudioFile(forReading: url)
         let chunk = AVAudioFrameCount(max(1024, reader.processingFormat.sampleRate / 5))
         reader.framePosition = AVAudioFramePosition(max(0, start) * reader.processingFormat.sampleRate)
         var converter: AVAudioConverter? = reader.processingFormat == format ? nil : AVAudioConverter(from: reader.processingFormat, to: format)

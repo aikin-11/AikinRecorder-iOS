@@ -46,7 +46,7 @@ struct RecordingLiveActivity: Widget {
                 HStack(spacing: 8) {
                     WaveLines(levels: context.state.levels, paused: context.state.paused)
                         .frame(width: 46, height: 18)
-                    Text(context.state.paused ? "已暂停" : "正在录音")
+                    Text("AikinRec")
                         .font(.subheadline.weight(.semibold))
                 }
                 Text(context.state.snippet)
@@ -59,11 +59,15 @@ struct RecordingLiveActivity: Widget {
                     .font(.subheadline.monospacedDigit())
                     .frame(width: 44)
                 Button(intent: AddMarkIntent()) {
-                    Image(systemName: "bookmark.fill")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                        .background(.white.opacity(0.16), in: Circle())
-                        .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+                    TimelineView(.animation(minimumInterval: 0.2)) { timeline in
+                        let lit = context.state.markedUntil > timeline.date
+                        Image(systemName: "bookmark.fill")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(lit ? Color.yellow : Color.white)
+                            .frame(width: 44, height: 44)
+                            .background((lit ? Color.yellow : Color.white).opacity(0.16), in: Circle())
+                            .overlay(Circle().strokeBorder(lit ? Color.yellow : Color.white, lineWidth: 1.5))
+                    }
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("标记")

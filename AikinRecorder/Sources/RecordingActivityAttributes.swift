@@ -22,6 +22,7 @@ struct RecordingActivityAttributes: ActivityAttributes {
         var snippet: String
         var captions: [String]
         var levels: [Double]
+        var markedUntil: Date
     }
 
     var title: String

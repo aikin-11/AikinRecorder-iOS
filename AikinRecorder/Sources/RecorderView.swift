@@ -107,7 +107,9 @@ struct RecorderView: View {
                     Button("Apple 本地") { model.transcriptionEngine = "local" }
                     Button("阿里云百炼") { model.transcriptionEngine = "bailian" }
                 } label: {
-                    Text(model.transcriptionEngine == "bailian" ? "百炼" : "Apple模型")
+                    Text(model.transcriptionEngine == "bailian" ? "阿里云模型" : "Apple模型")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)

@@ -50,6 +50,8 @@ struct LibraryView: View {
                     Text("AikinREC")
                         .font(.custom("SpecialElite-Regular", size: 22))
                         .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingSettings = true } label: { Image(systemName: "gearshape") }

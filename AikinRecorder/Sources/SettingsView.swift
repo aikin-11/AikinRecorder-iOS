@@ -78,7 +78,8 @@ private struct WebDAVSettingsView: View {
     @State private var webUser = WebDAVSettings.username
     @State private var webPassword = WebDAVSettings.password
     @State private var webPath = WebDAVSettings.remotePath
-    @State private var intervalHours = WebDAVSettings.intervalHours
+    @State private var syncEnabled = WebDAVSettings.syncMinute >= 0
+    @State private var syncTime = Self.date(minute: max(0, WebDAVSettings.syncMinute))
     @State private var message: String?
     @State private var working = false
 
@@ -89,10 +90,9 @@ private struct WebDAVSettingsView: View {
                 TextField("账号", text: $webUser).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("密码", text: $webPassword)
                 TextField("保存位置", text: $webPath).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Picker("自动同步", selection: $intervalHours) {
-                    Text("关闭").tag(0)
-                    Text("每 6 小时").tag(6)
-                    Text("每 24 小时").tag(24)
+                Toggle("每天定时同步", isOn: $syncEnabled)
+                if syncEnabled {
+                    DatePicker("同步时间", selection: $syncTime, displayedComponents: .hourAndMinute)
                 }
                 Button(working ? "正在连接…" : "测试连接") { testConnection() }.disabled(working)
                 Button("立即同步") { syncNow() }.disabled(working)
@@ -109,13 +109,21 @@ private struct WebDAVSettingsView: View {
         } message: { Text(message ?? "") }
     }
 
+    private static func date(minute: Int) -> Date {
+        var parts = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        parts.hour = minute / 60
+        parts.minute = minute % 60
+        return Calendar.current.date(from: parts) ?? .now
+    }
+
     private func save() {
         WebDAVSettings.url = webURL
         WebDAVSettings.username = webUser
         WebDAVSettings.password = webPassword
         WebDAVSettings.remotePath = webPath
-        WebDAVSettings.intervalHours = intervalHours
-        WebDAVSettings.autoSync = intervalHours > 0
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: syncTime)
+        WebDAVSettings.syncMinute = syncEnabled ? (parts.hour ?? 0) * 60 + (parts.minute ?? 0) : -1
+        WebDAVSettings.autoSync = syncEnabled
     }
 
     private func testConnection() {
@@ -196,7 +204,7 @@ private struct BailianSettingsView: View {
                 Button(working ? "正在测试…" : "测试连接") { test() }.disabled(working)
                 Button("保存") { save(); message = "已保存。" }
             } footer: {
-                Text("实时转写页可选「阿里云百炼」。默认模型 qwen-audio-asr-flash，音频按 16 kHz PCM 发送。华北2（北京）地址为 wss://dashscope.aliyuncs.com/api-ws/v1/inference。")
+                Text("实时转写页可选「阿里云模型」。默认模型 qwen-audio-3.1-asr-flash-streaming，音频按 16 kHz PCM 发送。华北2（北京）地址为 wss://dashscope.aliyuncs.com/api-ws/v1/inference。")
             }
         }
         .navigationTitle("阿里云百炼")

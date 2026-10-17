@@ -32,6 +32,7 @@ final class RecorderModel {
     private var activityLevels: [Double] = [0.15, 0.15, 0.15, 0.15, 0.15]
     var marks: [RecordingMark] = []
     private var markObserver: NSObjectProtocol?
+    private var markFlashUntil = Date.distantPast
 
     var transcript: String {
         lines.filter { !$0.provisional }.map(\.text).joined(separator: "\n")
@@ -214,7 +215,7 @@ final class RecorderModel {
         lastActivityUpdate = now
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
         let captions = lines.suffix(4).map { String($0.text.prefix(40)) }
-        RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)), captions: captions.isEmpty ? [String(snippet.prefix(40))] : captions, levels: activityLevels)
+        RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)), captions: captions.isEmpty ? [String(snippet.prefix(40))] : captions, levels: activityLevels, markedUntil: markFlashUntil)
     }
 
     private func applyBailian(_ text: String, finished: Bool) {
@@ -234,7 +235,9 @@ final class RecorderModel {
     func addMark() {
         guard state == .recording || state == .paused else { return }
         marks.append(RecordingMark(id: UUID(), time: elapsed, note: ""))
+        markFlashUntil = Date().addingTimeInterval(2)
         status = "已标记 \(Recording.compactTime(elapsed))"
+        pushActivity(force: true)
     }
 
     private func sampleLevel() {

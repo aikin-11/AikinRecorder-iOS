@@ -1,7 +1,7 @@
 import Foundation
 
 enum BailianSettings {
-    static let modelName = "qwen-audio-asr-flash"
+    static let modelName = "qwen-audio-3.1-asr-flash-streaming"
     static var apiKey: String {
         get { UserDefaults.standard.string(forKey: "bailian.apiKey") ?? "" }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "bailian.apiKey") }
@@ -9,7 +9,8 @@ enum BailianSettings {
     static var model: String {
         get {
             let value = UserDefaults.standard.string(forKey: "bailian.model") ?? ""
-            return value.isEmpty ? modelName : value
+            if value.isEmpty || value == "qwen-audio-asr-flash" { return modelName }
+            return value
         }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "bailian.model") }
     }

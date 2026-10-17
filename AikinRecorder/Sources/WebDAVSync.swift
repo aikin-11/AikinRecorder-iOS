@@ -24,9 +24,12 @@ enum WebDAVSettings {
         get { UserDefaults.standard.bool(forKey: "webdav.auto") }
         set { UserDefaults.standard.set(newValue, forKey: "webdav.auto") }
     }
-    static var intervalHours: Int {
-        get { max(0, UserDefaults.standard.integer(forKey: "webdav.hours")) }
-        set { UserDefaults.standard.set(newValue, forKey: "webdav.hours") }
+    static var syncMinute: Int {
+        get {
+            guard UserDefaults.standard.object(forKey: "webdav.minute") != nil else { return -1 }
+            return UserDefaults.standard.integer(forKey: "webdav.minute")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "webdav.minute") }
     }
     static var lastSync: Date? {
         get { UserDefaults.standard.object(forKey: "webdav.last") as? Date }
@@ -37,8 +40,14 @@ enum WebDAVSettings {
 enum WebDAVSync {
     @MainActor
     static func syncIfDue(_ store: LibraryStore) async {
-        guard WebDAVSettings.autoSync, WebDAVSettings.intervalHours > 0 else { return }
-        if let last = WebDAVSettings.lastSync, Date().timeIntervalSince(last) < Double(WebDAVSettings.intervalHours) * 3600 { return }
+        let minute = WebDAVSettings.syncMinute
+        guard minute >= 0 else { return }
+        let calendar = Calendar.current
+        var parts = calendar.dateComponents([.year, .month, .day], from: .now)
+        parts.hour = minute / 60
+        parts.minute = minute % 60
+        guard let due = calendar.date(from: parts), Date() >= due else { return }
+        if let last = WebDAVSettings.lastSync, last >= due { return }
         try? await sync(store)
     }
 

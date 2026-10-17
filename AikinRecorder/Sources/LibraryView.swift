@@ -218,7 +218,11 @@ private struct SwipeDeleteRow<Content: View>: View {
                         let open = value < -48
                         base = open ? -96 : 0
                         withAnimation(.snappy) { offset = base }
-                    } onTap: {
+                    } onTap: { x, width in
+                        if base < -8, x > width - 100 {
+                            onDelete()
+                            return
+                        }
                         if base < -8 {
                             base = 0
                             withAnimation(.snappy) { offset = 0 }
@@ -236,7 +240,7 @@ private struct HorizontalRowGesture: UIViewRepresentable {
     var base: CGFloat
     var onChange: (CGFloat) -> Void
     var onEnd: (CGFloat) -> Void
-    var onTap: () -> Void
+    var onTap: (CGFloat, CGFloat) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(base: base, onChange: onChange, onEnd: onEnd, onTap: onTap) }
 
@@ -265,10 +269,10 @@ private struct HorizontalRowGesture: UIViewRepresentable {
         var base: CGFloat
         var onChange: (CGFloat) -> Void
         var onEnd: (CGFloat) -> Void
-        var onTap: () -> Void
+        var onTap: (CGFloat, CGFloat) -> Void
         weak var pan: UIPanGestureRecognizer?
 
-        init(base: CGFloat, onChange: @escaping (CGFloat) -> Void, onEnd: @escaping (CGFloat) -> Void, onTap: @escaping () -> Void) {
+        init(base: CGFloat, onChange: @escaping (CGFloat) -> Void, onEnd: @escaping (CGFloat) -> Void, onTap: @escaping (CGFloat, CGFloat) -> Void) {
             self.base = base
             self.onChange = onChange
             self.onEnd = onEnd
@@ -285,8 +289,8 @@ private struct HorizontalRowGesture: UIViewRepresentable {
         }
 
         @objc func tap(_ gesture: UITapGestureRecognizer) {
-            guard gesture.state == .ended else { return }
-            onTap()
+            guard gesture.state == .ended, let view = gesture.view else { return }
+            onTap(gesture.location(in: view).x, view.bounds.width)
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

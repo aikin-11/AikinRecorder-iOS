@@ -1,0 +1,33 @@
+name: Build iOS unsigned IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Build unsigned device app and IPA
+        run: bash scripts/build_unsigned.sh
+      - name: Run library tests and capture native UI
+        run: bash scripts/test_simulator.sh
+      - name: Upload IPA, test results, screenshot and build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AikinRecorder-iOS-${{ github.run_number }}
+          path: build/artifacts/
+          retention-days: 14
+          if-no-files-found: error

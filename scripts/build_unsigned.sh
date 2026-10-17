@@ -10,7 +10,7 @@ xcodebuild -project AikinRecorder.xcodeproj -scheme AikinRecorder \
   CODE_SIGN_IDENTITY='' build 2>&1 | tee build/artifacts/device-build.log
 app=build/device/Build/Products/Release-iphoneos/AikinRecorder.app
 test -x "$app/AikinRecorder"
-xcrun lipo -verify_arch arm64 "$app/AikinRecorder"
+xcrun lipo "$app/AikinRecorder" -verify_arch arm64
 if codesign -dv "$app" >/dev/null 2>&1; then
   echo 'Expected an unsigned app, but found a code signature.' >&2
   exit 1

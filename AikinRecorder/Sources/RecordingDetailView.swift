@@ -92,8 +92,11 @@ struct RecordingDetailView: View {
             HStack {
                 Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }
                 if store.transcribingID == item.id {
-                    ProgressView(value: store.transcriptProgress)
-                    Text("\(Int(store.transcriptProgress * 100))%").font(.caption.monospacedDigit())
+                    let whole = max(item.duration, player.duration)
+                    let done = store.transcriptCursor
+                    ProgressView(value: whole > 0 ? min(1, done / whole) : store.transcriptProgress)
+                    Text("\(Recording.timeText(done)) / \(Recording.timeText(whole))")
+                        .font(.caption.monospacedDigit())
                 } else if store.queuedIDs.contains(item.id) {
                     Text("排队中").font(.caption).foregroundStyle(.yellow)
                 }

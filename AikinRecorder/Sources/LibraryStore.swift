@@ -12,6 +12,7 @@ final class LibraryStore {
     var transcribingID: UUID?
     var queuedIDs: Set<UUID> = []
     var transcriptProgress = 0.0
+    var transcriptCursor: TimeInterval = 0
     var transcriptPaused = false
     var transcriptTick = 0
     let directory: URL
@@ -189,17 +190,21 @@ final class LibraryStore {
         let kept = item.lines
         transcribingID = item.id
         transcriptPaused = false
+        transcriptCursor = start
         transcriptProgress = item.duration > 0 ? min(1, start / item.duration) : 0
         try? update(item)
         let service = SpeechSession()
         speech = service
-        service.onProgress = { [weak self] fraction in
+        let duration = item.duration
+        service.onProgress = { [weak self] seconds in
             guard let self else { return }
-            self.transcriptProgress = fraction
+            let whole = duration > 1 ? duration : seconds
+            self.transcriptCursor = seconds
+            self.transcriptProgress = whole > 0 ? min(1, seconds / whole) : 0
             if let index = self.recordings.firstIndex(where: { $0.id == item.id }) {
-                self.recordings[index].transcribedThrough = service.submitted
+                self.recordings[index].transcribedThrough = seconds
             }
-            self.pushTranscriptActivity(title: item.title, fraction: fraction)
+            self.pushTranscriptActivity(title: item.title, fraction: self.transcriptProgress)
         }
         service.onLines = { [weak self] lines in
             guard let self, let index = self.recordings.firstIndex(where: { $0.id == item.id }) else { return }

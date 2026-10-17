@@ -84,7 +84,8 @@ final class SpeechSession {
             throw RecorderError.message("无法准备语音识别的音频格式。")
         }
         let file = try AVAudioFile(forReading: url)
-        let total = Double(file.length) / file.fileFormat.sampleRate
+        let fromFrames = Double(file.length) / max(file.processingFormat.sampleRate, 1)
+        let total = fromFrames > 1 ? fromFrames : 0
         let (stream, builder) = AsyncStream<AnalyzerInput>.makeStream()
         continuation = builder
         try await analyzer.start(inputSequence: stream)
@@ -106,7 +107,7 @@ final class SpeechSession {
             try reader.read(into: input)
             if input.frameLength == 0 { break }
             submitted = Double(reader.framePosition) / reader.processingFormat.sampleRate
-            onProgress?(total > 0 ? min(1, submitted / total) : 0)
+            onProgress?(submitted)
             if let converter {
                 let capacity = AVAudioFrameCount(ceil(Double(input.frameLength) * format.sampleRate / reader.processingFormat.sampleRate)) + 32
                 guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { continue }
@@ -132,8 +133,8 @@ final class SpeechSession {
         if let resultError { throw resultError }
         self.analyzer = nil
         resultsTask = nil
-        submitted = total
-        onProgress?(1)
+        submitted = total > 1 ? total : submitted
+        onProgress?(submitted)
         onStatus?("转写完成")
     }
 

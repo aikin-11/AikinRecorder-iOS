@@ -13,12 +13,11 @@ struct RecorderView: View {
         @Bindable var model = model
         NavigationStack {
             VStack(spacing: 20) {
-                TextField("录音名称", text: $model.title, axis: .vertical)
-                    .font(.headline).lineLimit(2...3).padding(.horizontal)
-                    .accessibilityLabel("录音名称")
-                WaveformView(levels: model.levels).frame(height: 70).padding(.horizontal)
+                WaveformView(levels: model.levels).frame(height: 88).padding(.horizontal)
                 HStack {
                     Text(Recording.timeText(model.elapsed)).font(.title2.monospacedDigit())
+                    Spacer()
+                    Text("\(model.lines.reduce(0) { $0 + $1.text.count }) 字").font(.subheadline.monospacedDigit())
                     Spacer()
                     Text(model.state == .paused ? "已暂停" : model.status).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
                 }.padding(.horizontal)
@@ -89,9 +88,10 @@ struct RecorderView: View {
         switch model.state {
         case .idle:
             Button { preparingTask = Task { await model.start(in: store) } } label: {
-                Image(systemName: "mic.fill").font(.system(size: 27)).foregroundStyle(.black)
-                    .frame(width: 76, height: 76).background(.white, in: Circle())
-            }.accessibilityLabel("开始录音")
+                Text("开始").font(.headline).padding(.horizontal, 36).padding(.vertical, 16)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("开始录音")
         case .preparing, .saving:
             ProgressView(model.state == .saving ? "正在保存…" : "正在准备…").padding()
         case .recording, .paused:
@@ -118,16 +118,18 @@ struct WaveformView: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
             Canvas { context, size in
                 let energy = levels.isEmpty ? 0.15 : levels.reduce(0, +) / Float(levels.count)
-                let amplitude = max(6, CGFloat(min(1, energy)) * size.height * 0.42)
+                let amplitude = max(10, CGFloat(min(1, energy)) * size.height * 0.72)
                 let time = timeline.date.timeIntervalSinceReferenceDate
-                let waves: [(speed: Double, freq: CGFloat, phase: Double, alpha: Double)] = [
-                    (0.35, 1.1, 0, 0.9),
-                    (0.22, 1.7, 1.4, 0.55),
-                    (0.16, 0.7, 2.2, 0.35)
+                let waves: [(speed: Double, freq: CGFloat, phase: Double, alpha: Double, width: CGFloat)] = [
+                    (0.35, 1.1, 0, 0.95, 3.2),
+                    (0.28, 1.6, 0.8, 0.72, 2.6),
+                    (0.22, 0.8, 1.6, 0.55, 2.4),
+                    (0.18, 2.1, 2.3, 0.4, 2.2),
+                    (0.14, 1.3, 3.1, 0.28, 2)
                 ]
                 for wave in waves {
                     var path = Path()
-                    let step = max(2, size.width / 80)
+                    let step = max(2, size.width / 70)
                     var x: CGFloat = 0
                     while x <= size.width {
                         let y = size.height / 2 + sin(x / size.width * .pi * 2 * wave.freq + CGFloat(time * wave.speed + wave.phase)) * amplitude
@@ -135,7 +137,7 @@ struct WaveformView: View {
                         else { path.addLine(to: CGPoint(x: x, y: y)) }
                         x += step
                     }
-                    context.stroke(path, with: .color(.white.opacity(wave.alpha)), lineWidth: 1.6)
+                    context.stroke(path, with: .color(.white.opacity(wave.alpha)), lineWidth: wave.width)
                 }
             }
         }

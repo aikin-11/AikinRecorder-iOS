@@ -26,16 +26,28 @@ struct SettingsView: View {
                     Text("会议总结会把转写文字发送到 api.deepseek.com。密钥只保存在这台手机。")
                 }
                 Section {
-                    LabeledContent("已用空间", value: ByteCountFormatter.string(fromByteCount: usage, countStyle: .file))
-                    ForEach(store.recordings) { item in
-                        Toggle(item.title, isOn: Binding(get: { selected.contains(item.id) }, set: { on in
-                            if on { selected.insert(item.id) } else { selected.remove(item.id) }
-                        }))
+                    NavigationLink {
+                        List {
+                            ForEach(store.recordings) { item in
+                                Toggle(isOn: Binding(get: { selected.contains(item.id) }, set: { on in
+                                    if on { selected.insert(item.id) } else { selected.remove(item.id) }
+                                })) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.title).lineLimit(1)
+                                        Text(ByteCountFormatter.string(fromByteCount: store.fileBytes(item), countStyle: .file))
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            Button("清理所选录音", role: .destructive) { confirmingCleanup = true }
+                                .disabled(selected.isEmpty)
+                        }
+                        .navigationTitle("录音空间")
+                    } label: {
+                        LabeledContent("已用空间", value: ByteCountFormatter.string(fromByteCount: usage, countStyle: .file))
                     }
-                    Button("清理所选录音", role: .destructive) { confirmingCleanup = true }
-                        .disabled(selected.isEmpty)
                 } header: { Text("录音空间") } footer: {
-                    Text("清理会删除所选录音、转写和总结，且不能恢复。")
+                    Text("点进去查看每条录音的大小。清理会删除所选录音、转写和总结，且不能恢复。")
                 }
                 Section {
                     TextField("服务器地址", text: $webURL).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -50,7 +62,7 @@ struct SettingsView: View {
                     Button(working ? "正在连接…" : "测试连接") { testConnection() }.disabled(working)
                     Button("立即同步") { syncNow() }.disabled(working)
                 } header: { Text("WebDAV") } footer: {
-                    Text("保存位置是服务器上的目录，例如 /AikinRecorder。自动同步在打开应用且到达间隔时进行。")
+                    Text("先测试服务器本身是否连通。这台 NAS 的根目录不能新建文件夹，保存位置请填 /存储空间1/AikinRecorder。")
                 }
             }
             .navigationTitle("设置")

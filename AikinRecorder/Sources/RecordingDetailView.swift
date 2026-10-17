@@ -3,6 +3,7 @@ import SwiftUI
 struct RecordingDetailView: View {
     @Environment(LibraryStore.self) private var store
     @State var item: Recording
+    var initialQuery = ""
     @State private var player = PlaybackModel()
     @State private var errorMessage: String?
     @State private var showingRename = false
@@ -12,6 +13,8 @@ struct RecordingDetailView: View {
     @State private var showingSummary = false
     @State private var transcribing = false
     @State private var speech: SpeechSession?
+    @State private var findText = ""
+    @State private var findIndex = 0
 
     var body: some View {
         @Bindable var player = player
@@ -21,30 +24,48 @@ struct RecordingDetailView: View {
                 Spacer()
                 Text(item.fileName.split(separator: ".").last?.uppercased() ?? "AUDIO")
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal)
-            ScrollView {
-                if item.lines.isEmpty {
-                    Text(item.transcript.isEmpty ? "暂无转写文字。" : item.transcript)
-                        .foregroundStyle(item.transcript.isEmpty ? .secondary : .primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .padding(20)
-                } else {
-                    VStack(alignment: .leading, spacing: 14) {
-                        ForEach(item.lines) { line in
-                            HStack(alignment: .top, spacing: 12) {
-                                Text(Recording.timeText(line.time))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 64, alignment: .leading)
-                                Text(line.text)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .textSelection(.enabled)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { player.play(from: line.time) }
+            HStack {
+                TextField("在文本中查找", text: $findText)
+                    .textFieldStyle(.roundedBorder)
+                Button("上一处") { findIndex = max(0, findIndex - 1) }.font(.caption).disabled(findText.isEmpty)
+                Button("下一处") { findIndex += 1 }.font(.caption).disabled(findText.isEmpty)
+                Text("\(item.transcript.count) 字").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }.padding(.horizontal)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    if item.lines.isEmpty {
+                        Text(highlighted(item.transcript.isEmpty ? "暂无转写文字。" : item.transcript))
+                            .foregroundStyle(item.transcript.isEmpty ? .secondary : .primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .padding(20)
+                    } else {
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(item.lines) { line in
+                                HStack(alignment: .top, spacing: 12) {
+                                    Text(Recording.timeText(line.time))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 64, alignment: .leading)
+                                    Text(highlighted(line.text))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .textSelection(.enabled)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { player.play(from: line.time) }
+                                }
+                                .id(line.id)
                             }
                         }
+                        .padding(20)
                     }
-                    .padding(20)
+                }
+                .onChange(of: item.lines.count) {
+                    if let id = item.lines.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+                }
+                .onChange(of: findIndex) {
+                    let hits = item.lines.filter { $0.text.localizedStandardContains(findText) }
+                    if findText.isEmpty || hits.isEmpty { return }
+                    proxy.scrollTo(hits[min(findIndex, hits.count - 1)].id, anchor: .center)
                 }
             }
             HStack {
@@ -114,13 +135,27 @@ struct RecordingDetailView: View {
                 catch { errorMessage = error.localizedDescription }
             }
         }
-        .onAppear { player.load(store.audioURL(for: item)) }
+        .onAppear { player.load(store.audioURL(for: item)); findText = initialQuery }
         .onDisappear {
             player.stop()
             let service = speech
             Task { await service?.cancel() }
             save()
         }
+    }
+
+    private func highlighted(_ text: String) -> AttributedString {
+        var result = AttributedString(text)
+        let needle = findText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard needle.count >= 1 else { return result }
+        var search = result.startIndex
+        while let range = result[search...].range(of: needle, options: .caseInsensitive) {
+            result[range].backgroundColor = .yellow
+            result[range].foregroundColor = .black
+            search = range.upperBound
+            if search >= result.endIndex { break }
+        }
+        return result
     }
 
     private func save() {
@@ -196,9 +231,8 @@ private struct SummarySheet: View {
                         .padding(.horizontal)
                 }
                 ScrollView {
-                    Text(rendered)
+                    MarkdownSummary(text: summary.isEmpty ? (working ? "正在整理…" : "还没有总结。") : summary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
                         .padding()
                 }
             }
@@ -218,8 +252,49 @@ private struct SummarySheet: View {
         .preferredColorScheme(.dark)
     }
 
-    private var rendered: AttributedString {
-        if summary.isEmpty { return AttributedString(working ? "正在整理…" : "还没有总结。") }
-        return (try? AttributedString(markdown: summary)) ?? AttributedString(summary)
+}
+
+private struct MarkdownSummary: View {
+    let text: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .heading(let level, let line):
+                    Text(inline(line)).font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline).textSelection(.enabled)
+                case .paragraph(let line):
+                    Text(inline(line)).font(.body).textSelection(.enabled)
+                }
+            }
+        }
+    }
+
+    private enum Block { case heading(Int, String), paragraph(String) }
+
+    private var blocks: [Block] {
+        text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n").compactMap { raw in
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { return nil }
+            if line.hasPrefix("### ") { return .heading(3, String(line.dropFirst(4))) }
+            if line.hasPrefix("## ") { return .heading(2, String(line.dropFirst(3))) }
+            if line.hasPrefix("# ") { return .heading(1, String(line.dropFirst(2))) }
+            return .paragraph(line)
+        }
+    }
+
+    private func inline(_ source: String) -> AttributedString {
+        var result = AttributedString()
+        var rest = source
+        while let start = rest.range(of: "**") {
+            result += AttributedString(rest[..<start.lowerBound])
+            rest = String(rest[start.upperBound...])
+            guard let end = rest.range(of: "**") else { result += AttributedString("**" + rest); return result }
+            var bold = AttributedString(rest[..<end.lowerBound])
+            bold.font = .body.bold()
+            result += bold
+            rest = String(rest[end.upperBound...])
+        }
+        result += AttributedString(rest.replacingOccurrences(of: "*", with: ""))
+        return result
     }
 }

@@ -16,7 +16,7 @@ enum WebDAVSettings {
     static var remotePath: String {
         get {
             let value = UserDefaults.standard.string(forKey: "webdav.path") ?? "/AikinRecorder"
-            return value.isEmpty ? "/AikinRecorder" : value
+            return value.isEmpty ? "/存储空间1/AikinRecorder" : value
         }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "webdav.path") }
     }
@@ -43,7 +43,7 @@ enum WebDAVSync {
     }
 
     static func test() async throws {
-        _ = try await request(method: "PROPFIND", path: WebDAVSettings.remotePath, body: nil, depth: "0")
+        _ = try await request(method: "PROPFIND", path: "", body: nil, depth: "0")
     }
 
     @MainActor
@@ -74,7 +74,11 @@ enum WebDAVSync {
         var current = ""
         for part in parts {
             current += "/" + part
-            _ = try? await request(method: "MKCOL", path: current, body: nil, depth: nil)
+            if (try? await request(method: "PROPFIND", path: current, body: nil, depth: "0")) != nil { continue }
+            do { _ = try await request(method: "MKCOL", path: current, body: nil, depth: nil) }
+            catch {
+                throw RecorderError.message("无法在「\(current)」创建目录。根目录不能新建文件夹，请把保存位置改为 /存储空间1/AikinRecorder。")
+            }
         }
     }
 
@@ -86,11 +90,12 @@ enum WebDAVSync {
     }
 
     private static func request(method: String, path: String, body: Data?, depth: String?) async throws -> Data {
-        guard let base = URL(string: WebDAVSettings.url), !WebDAVSettings.url.isEmpty else {
+        guard var url = URL(string: WebDAVSettings.url), !WebDAVSettings.url.isEmpty else {
             throw RecorderError.message("请先填写 WebDAV 地址。")
         }
-        let relative = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        let url = relative.isEmpty ? base : base.appendingPathComponent(relative)
+        for part in path.split(separator: "/") where !part.isEmpty {
+            url.appendPathComponent(String(part))
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body

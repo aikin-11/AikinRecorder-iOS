@@ -180,7 +180,7 @@ final class RecorderModel {
     private func pushActivity(force: Bool) {
         guard state == .recording || state == .paused else { return }
         let now = Date()
-        if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 1 { return }
+        if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 0.35 { return }
         lastActivityUpdate = now
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
         RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)), levels: activityLevels)

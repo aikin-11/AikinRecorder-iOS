@@ -45,6 +45,7 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("录音列表")
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "搜索转写内容")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -61,7 +62,7 @@ struct LibraryView: View {
                     }.padding(.horizontal, 16).padding(.vertical, 12)
                 }
             }
-            .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item) }
+            .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item, initialQuery: query) }
             .sheet(isPresented: $showingRecorder) { RecorderView() }
             .overlay { if importing { ProgressView("正在导入…").padding(24).glassEffect(in: .rect(cornerRadius: 20)) } }
             .confirmationDialog("删除这条录音及转写文字？", isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }), titleVisibility: .visible) {
@@ -121,7 +122,7 @@ private struct RecordingRow: View {
                     Text(item.createdAt, format: .dateTime.month().day().hour().minute())
                     Text("·")
                     Text(Recording.timeText(item.duration)).monospacedDigit()
-                    if !item.summary.isEmpty { Text("· AI处理") }
+                    if !item.summary.isEmpty { Text("· AI处理完毕") }
                     else if !item.transcript.isEmpty { Text("· 已转写") }
                 }.font(.caption).foregroundStyle(.secondary)
             }

@@ -10,7 +10,6 @@ struct LibraryView: View {
     @State private var answerSources: [Recording] = []
     @State private var showingAnswer = false
     @State private var showingRecorder = false
-    @State private var showingAdd = false
     @State private var showingSettings = false
     @State private var importing = false
     @State private var errorMessage: String?
@@ -87,7 +86,10 @@ struct LibraryView: View {
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .glassEffect(.regular, in: .capsule)
-                    Button { showingAdd = true } label: {
+                    Menu {
+                        Button("录音实时转写", systemImage: "mic") { showingRecorder = true }
+                        Button("导入外部音频", systemImage: "square.and.arrow.down") { importAudio() }
+                    } label: {
                         Image(systemName: "plus")
                             .font(.body.weight(.semibold))
                             .frame(width: 44, height: 44)
@@ -97,18 +99,6 @@ struct LibraryView: View {
                     .glassEffect(.regular.interactive(), in: .circle)
                     .disabled(importing)
                     .accessibilityLabel("新建")
-                    .overlay(alignment: .bottomTrailing) {
-                        if showingAdd {
-                            VStack(alignment: .leading, spacing: 0) {
-                                addChoice("录音实时转写") { showingAdd = false; showingRecorder = true }
-                                addChoice("导入外部音频") { showingAdd = false; importAudio() }
-                            }
-                            .frame(width: 180)
-                            .background(Color.black, in: RoundedRectangle(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.7), lineWidth: 0.8))
-                            .offset(y: -56)
-                        }
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -173,20 +163,6 @@ struct LibraryView: View {
         }
     }
 
-    private func addChoice(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.body)
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.bordered)
-        .tint(.white)
-    }
-
     private func statCard(_ title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption).foregroundStyle(.secondary)
@@ -223,12 +199,14 @@ private struct SwipeDeleteRow<Content: View>: View {
                 Text("删除")
                     .font(.body.weight(.medium))
                     .foregroundStyle(.white)
-                    .frame(width: 76, height: 40)
-                    .background(Color.black, in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white, lineWidth: 1))
+                    .frame(maxHeight: .infinity)
+                    .frame(width: 72)
+                    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.35), lineWidth: 0.7))
             }
             .buttonStyle(.plain)
-            .padding(.trailing, 4)
+            .padding(.vertical, 0)
+            .padding(.trailing, 0)
+            .opacity(offset < -8 ? 1 : 0)
             content()
                 .offset(x: offset)
                 .gesture(

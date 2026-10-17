@@ -38,11 +38,12 @@ struct RecordingDetailView: View {
                             .textSelection(.enabled)
                             .padding(20)
                     } else {
-                        VStack(alignment: .leading, spacing: 14) {
+                        let times = cueTimes
+                        LazyVStack(alignment: .leading, spacing: 14) {
                             ForEach(item.lines) { line in
                                 HStack(alignment: .top, spacing: 12) {
                                     HStack(spacing: 2) {
-                                        Text(Recording.timeText(alignedTime(line)))
+                                        Text(Recording.timeText(times[line.id] ?? line.time))
                                         if item.marks.contains(where: { abs($0.time - line.time) < 1.2 }) {
                                             Image(systemName: "bookmark.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                                         }
@@ -55,7 +56,7 @@ struct RecordingDetailView: View {
                                         .padding(8)
                                         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(activeLineID == line.id ? Color.white : Color.clear, lineWidth: 1.4))
                                         .contentShape(Rectangle())
-                                        .highPriorityGesture(TapGesture().onEnded { player.play(from: alignedTime(line)) })
+                                        .highPriorityGesture(TapGesture().onEnded { player.play(from: times[line.id] ?? line.time) })
                                 }
                                 .id(line.id)
                             }
@@ -200,29 +201,30 @@ struct RecordingDetailView: View {
         }
     }
 
-    private var activeLineID: UUID? {
-        let sorted = item.lines.sorted { alignedTime($0) < alignedTime($1) }
-        return sorted.last { alignedTime($0) <= player.position + 0.2 }?.id ?? sorted.first?.id
-    }
-
-    private var storedTimesUsable: Bool {
-        let duration = max(item.duration, player.duration)
-        guard duration > 1, item.lines.count > 1 else { return item.lines.allSatisfy { $0.time >= 0 } }
-        let times = item.lines.map(\.time).sorted()
-        guard let first = times.first, let last = times.last else { return false }
-        return first < duration * 0.2 && last > duration * 0.45 && last <= duration * 1.05 && last - first > duration * 0.35
-    }
-
-    private func alignedTime(_ line: TranscriptCue) -> TimeInterval {
-        if storedTimesUsable { return line.time }
-        let duration = max(item.duration, player.duration, 0.01)
-        let total = max(1, item.lines.reduce(0) { $0 + $1.text.count })
-        var before = 0
-        for cue in item.lines {
-            if cue.id == line.id { break }
-            before += cue.text.count
+    private var cueTimes: [UUID: TimeInterval] {
+        let lines = item.lines
+        guard lines.count > 1 else {
+            return Dictionary(uniqueKeysWithValues: lines.map { ($0.id, max(0, $0.time)) })
         }
-        return duration * Double(before) / Double(total)
+        let duration = max(item.duration, player.duration, 0.01)
+        let first = lines.map(\.time).min() ?? 0
+        let last = lines.map(\.time).max() ?? 0
+        if last - first > 1, first >= -0.1, last <= duration * 1.25 {
+            return Dictionary(uniqueKeysWithValues: lines.map { ($0.id, min(max(0, $0.time), duration)) })
+        }
+        let total = max(1, lines.reduce(0) { $0 + $1.text.count })
+        var before = 0
+        var map: [UUID: TimeInterval] = [:]
+        for line in lines {
+            map[line.id] = duration * Double(before) / Double(total)
+            before += max(1, line.text.count)
+        }
+        return map
+    }
+
+    private var activeLineID: UUID? {
+        let times = cueTimes
+        return item.lines.last { (times[$0.id] ?? 0) <= player.position + 0.2 }?.id ?? item.lines.first?.id
     }
 
     private func highlighted(_ text: String) -> AttributedString {

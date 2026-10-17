@@ -58,8 +58,12 @@ struct RecordingLiveActivity: Widget {
                 .font(.footnote)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, minHeight: 34, maxHeight: 34, alignment: .topLeading)
+            Button(intent: AddMarkIntent()) {
+                Text("标记").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         }
-        .frame(height: 78)
+        .frame(height: 112)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .activityBackgroundTint(.black)
@@ -70,9 +74,10 @@ struct RecordingLiveActivity: Widget {
 private struct WaveLines: View {
     let levels: [Double]
     let paused: Bool
+    @Environment(\.isLuminanceReduced) private var reduced
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: paused)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: paused || reduced)) { timeline in
             Canvas { context, size in
                 let energy = levels.isEmpty ? 0.2 : levels.reduce(0, +) / Double(levels.count)
                 let amplitude = max(2, size.height * 0.46 * CGFloat(min(1, energy * 1.8)))

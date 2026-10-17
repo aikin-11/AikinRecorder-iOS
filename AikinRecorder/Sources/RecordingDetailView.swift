@@ -50,6 +50,8 @@ struct RecordingDetailView: View {
                                     Text(highlighted(line.text))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .textSelection(.enabled)
+                                        .padding(8)
+                                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(activeLineID == line.id ? Color.white : Color.clear, lineWidth: 1.4))
                                         .contentShape(Rectangle())
                                         .onTapGesture { player.play(from: line.time) }
                                 }
@@ -67,6 +69,21 @@ struct RecordingDetailView: View {
                     if findText.isEmpty || hits.isEmpty { return }
                     proxy.scrollTo(hits[min(findIndex, hits.count - 1)].id, anchor: .center)
                 }
+            }
+            if !item.marks.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("标记").font(.headline)
+                    ForEach($item.marks) { $mark in
+                        HStack {
+                            Button(Recording.timeText(mark.time)) { player.play(from: mark.time) }
+                                .font(.caption.monospacedDigit())
+                            TextField("标记说明", text: $mark.note)
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit { save() }
+                        }
+                    }
+                }
+                .padding(.horizontal)
             }
             HStack {
                 Button("转写文字", systemImage: "text.bubble") { transcribeImported() }
@@ -92,21 +109,6 @@ struct RecordingDetailView: View {
                     }
                 }.padding(.vertical, 10)
             }.padding(20).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Button { openSummary() } label: {
-                Group {
-                    if summarizing { ProgressView().tint(.black) }
-                    else { Image(systemName: "sparkles").font(.title3.weight(.semibold)) }
-                }
-                .foregroundStyle(.black)
-                .frame(width: 56, height: 56)
-                .background(.white, in: Circle())
-            }
-            .disabled(summarizing)
-            .accessibilityLabel(item.summary.isEmpty ? "会议总结" : "查看总结")
-            .padding(.trailing, 20)
-            .padding(.bottom, 210)
         }
         .padding(.bottom, 12).background(Color.black)
         .navigationTitle(item.title).navigationBarTitleDisplayMode(.inline)
@@ -142,6 +144,10 @@ struct RecordingDetailView: View {
             Task { await service?.cancel() }
             save()
         }
+    }
+
+    private var activeLineID: UUID? {
+        item.lines.sorted { $0.time < $1.time }.last { $0.time <= player.position + 0.2 }?.id
     }
 
     private func highlighted(_ text: String) -> AttributedString {

@@ -1,5 +1,11 @@
 import Foundation
 
+struct RecordingMark: Codable, Hashable, Identifiable {
+    var id: UUID
+    var time: TimeInterval
+    var note: String
+}
+
 struct TranscriptCue: Codable, Hashable, Identifiable {
     var id: UUID
     var time: TimeInterval
@@ -15,12 +21,13 @@ struct Recording: Identifiable, Codable, Hashable {
     var transcript: String
     var lines: [TranscriptCue]
     var summary: String
+    var marks: [RecordingMark]
 
     enum CodingKeys: String, CodingKey {
-        case id, title, fileName, createdAt, duration, transcript, lines, summary
+        case id, title, fileName, createdAt, duration, transcript, lines, summary, marks
     }
 
-    init(id: UUID, title: String, fileName: String, createdAt: Date, duration: TimeInterval, transcript: String, lines: [TranscriptCue] = [], summary: String = "") {
+    init(id: UUID, title: String, fileName: String, createdAt: Date, duration: TimeInterval, transcript: String, lines: [TranscriptCue] = [], summary: String = "", marks: [RecordingMark] = []) {
         self.id = id
         self.title = title
         self.fileName = fileName
@@ -29,6 +36,7 @@ struct Recording: Identifiable, Codable, Hashable {
         self.transcript = transcript
         self.lines = lines
         self.summary = summary
+        self.marks = marks
     }
 
     init(from decoder: Decoder) throws {
@@ -41,6 +49,7 @@ struct Recording: Identifiable, Codable, Hashable {
         transcript = try container.decode(String.self, forKey: .transcript)
         lines = try container.decodeIfPresent([TranscriptCue].self, forKey: .lines) ?? []
         summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        marks = try container.decodeIfPresent([RecordingMark].self, forKey: .marks) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -53,6 +62,7 @@ struct Recording: Identifiable, Codable, Hashable {
         try container.encode(transcript, forKey: .transcript)
         try container.encode(lines, forKey: .lines)
         try container.encode(summary, forKey: .summary)
+        try container.encode(marks, forKey: .marks)
     }
 
     static func meetingTitle(at date: Date = .now) -> String {

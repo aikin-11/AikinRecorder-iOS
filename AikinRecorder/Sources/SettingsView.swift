@@ -61,6 +61,7 @@ struct SettingsView: View {
                     }
                     Button(working ? "正在连接…" : "测试连接") { testConnection() }.disabled(working)
                     Button("立即同步") { syncNow() }.disabled(working)
+                    NavigationLink("已备份") { BackupListView() }
                 } header: { Text("WebDAV") } footer: {
                     Text("先测试服务器本身是否连通。这台 NAS 的根目录不能新建文件夹，保存位置请填 /存储空间1/AikinRecorder。")
                 }
@@ -118,5 +119,56 @@ struct SettingsView: View {
             selected.removeAll()
             usage = store.storageBytes()
         } catch { message = error.localizedDescription }
+    }
+}
+
+private struct BackupListView: View {
+    @State private var items: [WebDAVBackup] = []
+    @State private var selected: Set<String> = []
+    @State private var message: String?
+    @State private var loading = false
+
+    var body: some View {
+        List {
+            if loading && items.isEmpty { ProgressView("正在读取备份…") }
+            ForEach(items) { item in
+                Toggle(isOn: Binding(get: { selected.contains(item.path) }, set: { on in
+                    if on { selected.insert(item.path) } else { selected.remove(item.path) }
+                })) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.name).lineLimit(1)
+                        Text(ByteCountFormatter.string(fromByteCount: item.bytes, countStyle: .file))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Button("删除所选备份", role: .destructive) { remove() }
+                .disabled(selected.isEmpty || loading)
+        }
+        .navigationTitle("已备份")
+        .task { await reload() }
+        .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("好") { message = nil }
+        } message: { Text(message ?? "") }
+    }
+
+    private func reload() async {
+        loading = true
+        defer { loading = false }
+        do { items = try await WebDAVSync.backups() }
+        catch { message = error.localizedDescription }
+    }
+
+    private func remove() {
+        let paths = Array(selected)
+        loading = true
+        Task {
+            defer { loading = false }
+            do {
+                try await WebDAVSync.deleteBackups(paths)
+                selected.removeAll()
+                items = try await WebDAVSync.backups()
+            } catch { message = error.localizedDescription }
+        }
     }
 }

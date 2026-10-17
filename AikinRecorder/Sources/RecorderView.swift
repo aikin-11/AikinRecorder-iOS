@@ -13,7 +13,7 @@ struct RecorderView: View {
         @Bindable var model = model
         NavigationStack {
             VStack(spacing: 20) {
-                WaveformView(levels: model.levels).frame(height: 88).padding(.horizontal)
+                WaveformView(levels: model.levels, moving: model.state == .recording).frame(height: 88).padding(.horizontal)
                 HStack {
                     Text(Recording.timeText(model.elapsed)).font(.title2.monospacedDigit())
                     Spacer()
@@ -95,27 +95,31 @@ struct RecorderView: View {
         case .preparing, .saving:
             ProgressView(model.state == .saving ? "正在保存…" : "正在准备…").padding()
         case .recording, .paused:
-            GlassEffectContainer(spacing: 24) {
-                HStack(spacing: 36) {
+            GlassEffectContainer(spacing: 16) {
+                HStack(spacing: 16) {
                     Button { model.togglePause() } label: {
                         Label(model.state == .paused ? "继续" : "暂停", systemImage: model.state == .paused ? "play.fill" : "pause.fill")
-                            .padding(.horizontal, 22).padding(.vertical, 16)
+                            .padding(.horizontal, 16).padding(.vertical, 16)
+                    }.buttonStyle(.glass)
+                    Button { model.addMark() } label: {
+                        Label("标记", systemImage: "bookmark").padding(.horizontal, 16).padding(.vertical, 16)
                     }.buttonStyle(.glass)
                     Button { titleDraft = model.title; showingRename = true } label: {
-                        Label("保存", systemImage: "stop.fill").padding(.horizontal, 22).padding(.vertical, 16)
+                        Label("保存", systemImage: "stop.fill").padding(.horizontal, 16).padding(.vertical, 16)
                     }.buttonStyle(.glass)
                 }
             }
         case .saved:
-            Button("完成") { dismiss() }.buttonStyle(.glass).controlSize(.large)
+            EmptyView()
         }
     }
 }
 
 struct WaveformView: View {
     let levels: [Float]
+    var moving = true
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !moving)) { timeline in
             Canvas { context, size in
                 let energy = levels.isEmpty ? 0.15 : levels.reduce(0, +) / Float(levels.count)
                 let amplitude = max(10, CGFloat(min(1, energy)) * size.height * 0.72)

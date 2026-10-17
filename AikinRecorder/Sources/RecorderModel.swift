@@ -27,6 +27,8 @@ final class RecorderModel {
     private var lastActivityUpdate: Date?
     private let levelMeter = LevelMeter()
     private var activityLevels: [Double] = [0.15, 0.15, 0.15, 0.15, 0.15]
+    var marks: [RecordingMark] = []
+    private var markObserver: NSObjectProtocol?
 
     var transcript: String {
         lines.filter { !$0.provisional }.map(\.text).joined(separator: "\n")
@@ -96,6 +98,9 @@ final class RecorderModel {
             startTime = .now
             UIApplication.shared.isIdleTimerDisabled = true
             RecordingActivity.start(title: Recording.cleanTitle(title), elapsed: 0)
+            markObserver = NotificationCenter.default.addObserver(forName: .aikinRecordingMark, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.addMark() }
+            }
             timer = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(33))
@@ -161,10 +166,12 @@ final class RecorderModel {
         await speech?.finishLive()
         speech = nil
         if let observer = interruptionObserver { NotificationCenter.default.removeObserver(observer); interruptionObserver = nil }
+        if let observer = markObserver { NotificationCenter.default.removeObserver(observer); markObserver = nil }
         if var item {
             item.title = Recording.cleanTitle(title)
             item.transcript = transcript
             item.lines = lines.filter { !$0.provisional }.map { TranscriptCue(id: $0.id, time: $0.time, text: $0.text) }
+            item.marks = marks
             let asset = AVURLAsset(url: store.audioURL(for: item))
             if let time = try? await asset.load(.duration), time.seconds.isFinite { item.duration = time.seconds }
             else { item.duration = elapsed }
@@ -184,6 +191,12 @@ final class RecorderModel {
         lastActivityUpdate = now
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
         RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)), levels: activityLevels)
+    }
+
+    func addMark() {
+        guard state == .recording || state == .paused else { return }
+        marks.append(RecordingMark(id: UUID(), time: elapsed, note: ""))
+        status = "已标记 \(Recording.compactTime(elapsed))"
     }
 
     private func sampleLevel() {

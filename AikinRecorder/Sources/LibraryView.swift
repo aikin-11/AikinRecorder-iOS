@@ -114,7 +114,7 @@ private struct RecordingRow: View {
             Image(systemName: "play.fill").font(.system(size: 16, weight: .semibold))
                 .frame(width: 40, height: 40).background(.white.opacity(0.12), in: Circle())
             VStack(alignment: .leading, spacing: 7) {
-                Text(item.title).font(.body.weight(.medium)).lineLimit(2).multilineTextAlignment(.leading)
+                Text(item.title).font(.title3.weight(.semibold)).lineLimit(2).multilineTextAlignment(.leading)
                 if !query.isEmpty, let snippet = highlightedSnippet(item.transcript, query: query) {
                     Text(snippet).font(.caption).lineLimit(2)
                 }

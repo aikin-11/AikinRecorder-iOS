@@ -33,9 +33,9 @@ jobs:
       - name: Upload unsigned IPA immediately
         uses: actions/upload-artifact@v4
         with:
-          name: AikinRecorder-1.1.0-unsigned-IPA-${{ github.run_number }}
+          name: AikinRecorder-1.2.0-unsigned-IPA-${{ github.run_number }}
           path: |
-            build/artifacts/AikinRecorder-1.1.0-unsigned.ipa
+            build/artifacts/AikinRecorder-1.2.0-unsigned.ipa
             build/artifacts/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error

@@ -49,28 +49,70 @@ enum WebDAVSync {
     @MainActor
     static func sync(_ store: LibraryStore) async throws {
         try await test()
-        try await ensureFolder()
+        try await ensureFolder(WebDAVSettings.remotePath)
         for item in store.recordings {
+            let folder = WebDAVSettings.remotePath + "/" + Recording.cleanTitle(item.title)
+            try await ensureFolder(folder)
             let audio = store.audioURL(for: item)
             if FileManager.default.fileExists(atPath: audio.path) {
-                try await upload(file: audio, remoteName: "\(item.id.uuidString).\(audio.pathExtension)")
+                try await upload(file: audio, folder: folder, remoteName: "录音.\(audio.pathExtension)")
             }
             if !item.transcript.isEmpty {
                 let text = FileManager.default.temporaryDirectory.appendingPathComponent("\(item.id.uuidString).txt")
                 try item.transcript.write(to: text, atomically: true, encoding: .utf8)
-                try await upload(file: text, remoteName: "\(item.id.uuidString).txt")
+                try await upload(file: text, folder: folder, remoteName: "转写.txt")
             }
             if !item.summary.isEmpty {
                 let text = FileManager.default.temporaryDirectory.appendingPathComponent("\(item.id.uuidString)-summary.txt")
                 try item.summary.write(to: text, atomically: true, encoding: .utf8)
-                try await upload(file: text, remoteName: "\(item.id.uuidString)-summary.txt")
+                try await upload(file: text, folder: folder, remoteName: "总结.txt")
             }
         }
         WebDAVSettings.lastSync = .now
     }
 
-    private static func ensureFolder() async throws {
-        let parts = WebDAVSettings.remotePath.split(separator: "/").map(String.init)
+    static func backups() async throws -> [WebDAVBackup] {
+        let listing = try await request(method: "PROPFIND", path: WebDAVSettings.remotePath, body: propfindBody, depth: "1")
+        let parent = normalized(WebDAVSettings.remotePath)
+        var result: [WebDAVBackup] = []
+        for folder in parseResponses(listing) where folder.isCollection {
+            let key = normalized(folder.path)
+            guard key != parent, key.hasPrefix(parent) else { continue }
+            let children = (try? parseResponses(await request(method: "PROPFIND", path: "/" + key, body: propfindBody, depth: "1"))) ?? []
+            let bytes = children.filter { !$0.isCollection }.reduce(Int64(0)) { $0 + $1.bytes }
+            result.append(WebDAVBackup(path: "/" + key, name: key.split(separator: "/").last.map(String.init) ?? key, bytes: bytes))
+        }
+        return result
+    }
+
+    static func deleteBackups(_ paths: [String]) async throws {
+        for path in paths {
+            _ = try await request(method: "DELETE", path: path, body: nil, depth: "infinity")
+        }
+    }
+
+    private static var propfindBody: Data {
+        Data("""
+        <?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:getcontentlength/><D:resourcetype/></D:prop></D:propfind>
+        """.utf8)
+    }
+
+    private static func normalized(_ path: String) -> String {
+        path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    private static func parseResponses(_ data: Data) -> [(path: String, bytes: Int64, isCollection: Bool)] {
+        let xml = String(data: data, encoding: .utf8) ?? ""
+        return xml.components(separatedBy: "<D:response>").dropFirst().compactMap { block in
+            guard let hrefStart = block.range(of: "<D:href>"), let hrefEnd = block.range(of: "</D:href>") else { return nil }
+            let href = String(block[hrefStart.upperBound..<hrefEnd.lowerBound]).removingPercentEncoding ?? ""
+            let bytes = Int64(block.slice(after: "<D:getcontentlength>", before: "</D:getcontentlength>")) ?? 0
+            return (path: href, bytes: bytes, isCollection: block.contains("<D:collection"))
+        }
+    }
+
+    private static func ensureFolder(_ fullPath: String) async throws {
+        let parts = fullPath.split(separator: "/").map(String.init)
         var current = ""
         for part in parts {
             current += "/" + part
@@ -82,11 +124,9 @@ enum WebDAVSync {
         }
     }
 
-    private static func upload(file: URL, remoteName: String) async throws {
+    private static func upload(file: URL, folder: String, remoteName: String) async throws {
         let data = try Data(contentsOf: file)
-        var path = WebDAVSettings.remotePath
-        if !path.hasSuffix("/") { path += "/" }
-        _ = try await request(method: "PUT", path: path + remoteName, body: data, depth: nil)
+        _ = try await request(method: "PUT", path: folder + "/" + remoteName, body: data, depth: nil)
     }
 
     private static func request(method: String, path: String, body: Data?, depth: String?) async throws -> Data {
@@ -110,5 +150,19 @@ enum WebDAVSync {
             throw RecorderError.message("WebDAV 连接失败（\(code)）。")
         }
         return data
+    }
+}
+
+struct WebDAVBackup: Identifiable, Hashable {
+    var id: String { path }
+    var path: String
+    var name: String
+    var bytes: Int64
+}
+
+private extension String {
+    func slice(after start: String, before end: String) -> String {
+        guard let lower = range(of: start), let upper = range(of: end) else { return "" }
+        return String(self[lower.upperBound..<upper.lowerBound])
     }
 }

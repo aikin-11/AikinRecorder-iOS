@@ -16,6 +16,10 @@ struct Recording: Identifiable, Codable, Hashable {
     var lines: [TranscriptCue]
     var summary: String
 
+    enum CodingKeys: String, CodingKey {
+        case id, title, fileName, createdAt, duration, transcript, lines, summary
+    }
+
     init(id: UUID, title: String, fileName: String, createdAt: Date, duration: TimeInterval, transcript: String, lines: [TranscriptCue] = [], summary: String = "") {
         self.id = id
         self.title = title

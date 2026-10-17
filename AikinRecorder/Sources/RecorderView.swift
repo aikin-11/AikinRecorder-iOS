@@ -6,6 +6,8 @@ struct RecorderView: View {
     @State private var model = RecorderModel()
     @State private var preparingTask: Task<Void, Never>?
     @State private var confirmingClose = false
+    @State private var showingRename = false
+    @State private var titleDraft = ""
 
     var body: some View {
         @Bindable var model = model
@@ -32,29 +34,35 @@ struct RecorderView: View {
                             .font(.footnote).foregroundStyle(.secondary)
                     }.padding(20).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal)
                 }
-                ScrollView {
-                    if model.lines.isEmpty {
-                        Text("靠近手机讲话，转写文字会显示在这里。")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(20)
-                    } else {
-                        VStack(alignment: .leading, spacing: 14) {
-                            ForEach(model.lines) { line in
-                                HStack(alignment: .top, spacing: 12) {
-                                    Text(Recording.timeText(line.time))
-                                        .font(.caption.monospacedDigit())
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 64, alignment: .leading)
-                                        .accessibilityLabel("时间 \(Recording.timeText(line.time))")
-                                    Text(line.text)
-                                        .foregroundStyle(line.provisional ? .secondary : .primary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .textSelection(.enabled)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        if model.lines.isEmpty {
+                            Text("靠近手机讲话，转写文字会显示在这里。")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(20)
+                        } else {
+                            VStack(alignment: .leading, spacing: 14) {
+                                ForEach(model.lines) { line in
+                                    HStack(alignment: .top, spacing: 12) {
+                                        Text(Recording.timeText(line.time))
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 64, alignment: .leading)
+                                            .accessibilityLabel("时间 \(Recording.timeText(line.time))")
+                                        Text(line.text)
+                                            .foregroundStyle(line.provisional ? .secondary : .primary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .textSelection(.enabled)
+                                    }
+                                    .id(line.id)
                                 }
                             }
+                            .padding(20)
                         }
-                        .padding(20)
+                    }
+                    .onChange(of: model.lines.last?.text) {
+                        if let id = model.lines.last?.id { proxy.scrollTo(id, anchor: .bottom) }
                     }
                 }
                 controls.padding(.bottom, 20)
@@ -74,6 +82,14 @@ struct RecorderView: View {
             .confirmationDialog("保存录音后退出？", isPresented: $confirmingClose, titleVisibility: .visible) {
                 Button("保存并退出") { Task { await model.finish(in: store); dismiss() } }
             }
+            .alert("保存录音", isPresented: $showingRename) {
+                TextField("录音名称", text: $titleDraft)
+                Button("保存") {
+                    model.title = titleDraft
+                    Task { await model.finish(in: store) }
+                }
+                Button("取消", role: .cancel) { }
+            } message: { Text("确认名称后再保存。") }
             .alert("提示", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
                 Button("好") { model.errorMessage = nil }
             } message: { Text(model.errorMessage ?? "") }
@@ -97,7 +113,7 @@ struct RecorderView: View {
                         Label(model.state == .paused ? "继续" : "暂停", systemImage: model.state == .paused ? "play.fill" : "pause.fill")
                             .padding(.horizontal, 22).padding(.vertical, 16)
                     }.buttonStyle(.glass)
-                    Button { Task { await model.finish(in: store) } } label: {
+                    Button { titleDraft = model.title; showingRename = true } label: {
                         Label("保存", systemImage: "stop.fill").padding(.horizontal, 22).padding(.vertical, 16)
                     }.buttonStyle(.glass)
                 }
@@ -111,14 +127,18 @@ struct RecorderView: View {
 struct WaveformView: View {
     let levels: [Float]
     var body: some View {
-        GeometryReader { proxy in
-            HStack(alignment: .center, spacing: 3) {
-                ForEach(levels.indices, id: \.self) { index in
-                    Capsule().fill(.white.opacity(0.75))
-                        .frame(width: max(2, (proxy.size.width - CGFloat(levels.count - 1) * 3) / CGFloat(levels.count)),
-                               height: max(2, CGFloat(levels[index]) * proxy.size.height))
-                }
-            }.frame(height: proxy.size.height)
-        }.accessibilityLabel("麦克风音量波形").accessibilityHidden(true)
+        Canvas { context, size in
+            let count = CGFloat(max(levels.count, 1))
+            let spacing: CGFloat = 3
+            let width = max(2, (size.width - spacing * (count - 1)) / count)
+            for index in levels.indices {
+                let height = max(2, CGFloat(levels[index]) * size.height)
+                let x = CGFloat(index) * (width + spacing)
+                let rect = CGRect(x: x, y: (size.height - height) / 2, width: width, height: height)
+                context.fill(Path(roundedRect: rect, cornerRadius: width / 2), with: .color(.white.opacity(0.75)))
+            }
+        }
+        .accessibilityLabel("麦克风音量波形")
+        .accessibilityHidden(true)
     }
 }

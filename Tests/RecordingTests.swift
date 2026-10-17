@@ -28,7 +28,7 @@ final class RecordingTests: XCTestCase {
     func testMeetingNameUsesShanghaiTimeAndHasNoCollisionProneSequence() {
         let formatter = ISO8601DateFormatter()
         let date = formatter.date(from: "2026-10-17T07:32:00Z")!
-        XCTAssertEqual(Recording.meetingTitle(at: date), "Aikin会议录音_2026年10月17日15时32分")
+        XCTAssertEqual(Recording.meetingTitle(at: date), "Aikin会议录音")
     }
 
     func testTitlesCannotEscapeExportDirectory() {

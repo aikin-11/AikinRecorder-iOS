@@ -25,6 +25,8 @@ final class RecorderModel {
     private var interruptionObserver: NSObjectProtocol?
     private var hasTap = false
     private var lastActivityUpdate: Date?
+    private let levelMeter = LevelMeter()
+    private var activityLevels: [Double] = [0.15, 0.15, 0.15, 0.15, 0.15]
 
     var transcript: String {
         lines.filter { !$0.provisional }.map(\.text).joined(separator: "\n")
@@ -80,7 +82,7 @@ final class RecorderModel {
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw RecorderError.message("麦克风当前不可用，请检查音频设备。") }
             let pipeline = try AudioCapture(url: store.audioURL(for: draft), inputFormat: inputFormat,
                 analyzerFormat: format, continuation: builder,
-                onLevel: { [weak self] value in Task { @MainActor in self?.appendLevel(value) } },
+                onLevel: { [levelMeter] value in levelMeter.set(value) },
                 onFailure: { [weak self, weak store] message in Task { @MainActor in
                     self?.errorMessage = "音频写入失败：\(message)"
                     if let self, let store { await self.finish(in: store) }
@@ -96,9 +98,10 @@ final class RecorderModel {
             RecordingActivity.start(title: Recording.cleanTitle(title), elapsed: 0)
             timer = Task { [weak self] in
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(150))
+                    try? await Task.sleep(for: .milliseconds(33))
                     guard let self else { return }
                     if self.state == .recording, let start = self.startTime { self.elapsed = self.elapsedBeforePause + Date().timeIntervalSince(start) }
+                    self.sampleLevel()
                     self.pushActivity(force: false)
                 }
             }
@@ -161,6 +164,7 @@ final class RecorderModel {
         if var item {
             item.title = Recording.cleanTitle(title)
             item.transcript = transcript
+            item.lines = lines.filter { !$0.provisional }.map { TranscriptCue(id: $0.id, time: $0.time, text: $0.text) }
             let asset = AVURLAsset(url: store.audioURL(for: item))
             if let time = try? await asset.load(.duration), time.seconds.isFinite { item.duration = time.seconds }
             else { item.duration = elapsed }
@@ -179,12 +183,22 @@ final class RecorderModel {
         if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 1 { return }
         lastActivityUpdate = now
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
-        RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)))
+        RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)), levels: activityLevels)
     }
 
-    private func appendLevel(_ value: Float) {
+    private func sampleLevel() {
         guard state == .recording else { return }
+        let value = levelMeter.get()
         levels.removeFirst()
         levels.append(value)
+        activityLevels.removeFirst()
+        activityLevels.append(Double(value))
     }
+}
+
+final class LevelMeter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Float = 0
+    func set(_ newValue: Float) { lock.lock(); value = newValue; lock.unlock() }
+    func get() -> Float { lock.lock(); defer { lock.unlock() }; return value }
 }

@@ -5,7 +5,7 @@ struct LibraryView: View {
     @Environment(LibraryStore.self) private var store
     @State private var query = ""
     @State private var showingRecorder = false
-    @State private var showingImporter = false
+    @State private var showingSettings = false
     @State private var importing = false
     @State private var errorMessage: String?
     @State private var itemToDelete: Recording?
@@ -44,32 +44,25 @@ struct LibraryView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-            .navigationTitle("文件库")
+            .navigationTitle("录音列表")
             .searchable(text: $query, prompt: "搜索录音与文字")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingSettings = true } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel("设置")
+                }
+            }
+            .sheet(isPresented: $showingSettings) { SettingsView() }
             .safeAreaInset(edge: .bottom) {
                 GlassEffectContainer(spacing: 16) {
                     HStack(spacing: 12) {
-                        action("录音实时转写", caption: "REC / LIVE", symbol: "mic") { showingRecorder = true }
-                        action("导入外部音频", caption: "IMPORT / AUDIO", symbol: "square.and.arrow.down") { showingImporter = true }
+                        action("录音实时转写", symbol: "mic") { showingRecorder = true }
+                        action("导入外部音频", symbol: "square.and.arrow.down") { importAudio() }
                     }.padding(.horizontal, 16).padding(.vertical, 12)
                 }
             }
             .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item) }
             .sheet(isPresented: $showingRecorder) { RecorderView() }
-            .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
-                switch result {
-                case .success(let urls):
-                    Task {
-                        importing = true
-                        defer { importing = false }
-                        for url in urls {
-                            do { _ = try await store.importAudio(from: url) }
-                            catch { errorMessage = "\(url.lastPathComponent)：\(error.localizedDescription)" }
-                        }
-                    }
-                case .failure(let error): errorMessage = error.localizedDescription
-                }
-            }
             .overlay { if importing { ProgressView("正在导入…").padding(24).glassEffect(in: .rect(cornerRadius: 20)) } }
             .confirmationDialog("删除这条录音及转写文字？", isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }), titleVisibility: .visible) {
                 Button("删除录音", role: .destructive) {
@@ -83,16 +76,27 @@ struct LibraryView: View {
         }
     }
 
-    private func action(_ title: String, caption: String, symbol: String, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            VStack(alignment: .leading, spacing: 5) {
-                Label(title, systemImage: symbol).font(.headline)
-                Text(caption).font(.custom("SpecialElite-Regular", size: 12, relativeTo: .caption)).foregroundStyle(.secondary)
+    private func importAudio() {
+        SystemPresenter.pickAudio { urls in
+            Task {
+                importing = true
+                defer { importing = false }
+                for url in urls {
+                    do { _ = try await store.importAudio(from: url) }
+                    catch { errorMessage = "\(url.lastPathComponent)：\(error.localizedDescription)" }
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-            .padding(.horizontal, 16).padding(.vertical, 8)
-            .foregroundStyle(.white)
-            .contentShape(RoundedRectangle(cornerRadius: 20))
+        }
+    }
+
+    private func action(_ title: String, symbol: String, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            Label(title, systemImage: symbol)
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .padding(.horizontal, 16)
+                .foregroundStyle(.white)
+                .contentShape(RoundedRectangle(cornerRadius: 20))
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))

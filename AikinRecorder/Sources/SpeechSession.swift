@@ -13,6 +13,9 @@ final class SpeechSession {
     var onStatus: ((String) -> Void)?
     var onProgress: ((Double) -> Void)?
     private var filePaused = false
+    private var fileStart: TimeInterval = 0
+    private var streamTimeOffset: TimeInterval = 0
+    private var maxSpoken: TimeInterval = 0
     var submitted: TimeInterval = 0
 
     private func prepare(localeID: String) async throws -> SpeechTranscriber {
@@ -36,8 +39,8 @@ final class SpeechSession {
                     guard let self else { return }
                     let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
-                    let spokenAt = result.range.start.seconds
-                    self.apply(text: text, time: spokenAt.isFinite ? spokenAt : (self.clock?() ?? 0), provisional: !result.isFinal)
+                    let spokenAt = self.unwrappedTime(result.range.start.seconds)
+                    self.apply(text: text, time: spokenAt, provisional: !result.isFinal)
                     self.onLines?(self.lines)
                 }
             } catch {
@@ -86,6 +89,9 @@ final class SpeechSession {
         continuation = builder
         try await analyzer.start(inputSequence: stream)
         onStatus?(start > 0.5 ? "继续转写…" : "正在本地转写…")
+        fileStart = max(0, start)
+        streamTimeOffset = 0
+        maxSpoken = 0
         let reader = try AVAudioFile(forReading: url)
         let chunk = AVAudioFrameCount(max(1024, reader.processingFormat.sampleRate / 5))
         reader.framePosition = AVAudioFramePosition(max(0, start) * reader.processingFormat.sampleRate)
@@ -129,6 +135,18 @@ final class SpeechSession {
         submitted = total
         onProgress?(1)
         onStatus?("转写完成")
+    }
+
+    /// Apple 的识别时间在长音频里会从约 4 分钟处回到 0，这里按回绕把时间接上，并加上续传起点。
+    private func unwrappedTime(_ raw: TimeInterval) -> TimeInterval {
+        guard raw.isFinite, raw >= 0 else { return fileStart + maxSpoken }
+        if maxSpoken > 30, raw + 20 < maxSpoken {
+            streamTimeOffset += maxSpoken
+            maxSpoken = raw
+        } else if raw > maxSpoken {
+            maxSpoken = raw
+        }
+        return fileStart + streamTimeOffset + raw
     }
 
     private func apply(text: String, time: TimeInterval, provisional: Bool) {

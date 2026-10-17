@@ -209,10 +209,11 @@ struct RecordingDetailView: View {
             return Dictionary(uniqueKeysWithValues: lines.map { ($0.id, max(0, $0.time)) })
         }
         let duration = max(item.duration, player.duration, 0.01)
-        let first = lines.map(\.time).min() ?? 0
-        let last = lines.map(\.time).max() ?? 0
+        let unwrapped = unwrappedCueTimes(lines)
+        let first = unwrapped.values.min() ?? 0
+        let last = unwrapped.values.max() ?? 0
         if last - first > 1, first >= -0.1, last <= duration * 1.25 {
-            return Dictionary(uniqueKeysWithValues: lines.map { ($0.id, min(max(0, $0.time), duration)) })
+            return unwrapped.mapValues { min(max(0, $0), duration) }
         }
         let total = max(1, lines.reduce(0) { $0 + $1.text.count })
         var before = 0
@@ -220,6 +221,24 @@ struct RecordingDetailView: View {
         for line in lines {
             map[line.id] = duration * Double(before) / Double(total)
             before += max(1, line.text.count)
+        }
+        return map
+    }
+
+    /// 已保存的长音频时间戳会在 3:59 后回到 0，按顺序把回绕接回真实时间。
+    private func unwrappedCueTimes(_ lines: [TranscriptCue]) -> [UUID: TimeInterval] {
+        var offset = 0.0
+        var cycleMax = 0.0
+        var map: [UUID: TimeInterval] = [:]
+        for line in lines {
+            let raw = max(0, line.time)
+            if cycleMax > 30, raw + 20 < cycleMax {
+                offset += cycleMax
+                cycleMax = raw
+            } else if raw > cycleMax {
+                cycleMax = raw
+            }
+            map[line.id] = raw + offset
         }
         return map
     }

@@ -28,7 +28,7 @@ enum DeepSeekClient {
         }
     }
 
-    static func summarize(transcript: String) async throws -> String {
+    static func summarize(transcript: String, onProgress: @escaping (Double) -> Void) async throws -> String {
         let key = DeepSeekSettings.apiKey
         guard !key.isEmpty else { throw RecorderError.message("请先在设置中填写 DeepSeek API Key。") }
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -40,24 +40,36 @@ enum DeepSeekClient {
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         let body: [String: Any] = [
             "model": "deepseek-chat",
+            "stream": true,
             "messages": [
                 ["role": "system", "content": "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。已知记忆：\(MeetingMemory.text)"],
                 ["role": "user", "content": String(transcript.prefix(24_000))]
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let detail = String(data: data, encoding: .utf8) ?? ""
-            throw RecorderError.message(detail.isEmpty ? "DeepSeek 请求失败。" : "DeepSeek 请求失败：\(detail.prefix(180))")
+            throw RecorderError.message("DeepSeek 请求失败。")
         }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let message = choices.first?["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw RecorderError.message("DeepSeek 没有返回总结。")
+        onProgress(0)
+        var collected = ""
+        let estimate = max(600.0, Double(min(transcript.count, 24_000)) / 6)
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data:") else { continue }
+            let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if payload == "[DONE]" { break }
+            guard let data = payload.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let delta = choices.first?["delta"] as? [String: Any],
+                  let piece = delta["content"] as? String else { continue }
+            collected += piece
+            onProgress(min(0.98, Double(collected.count) / estimate))
         }
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = collected.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty else { throw RecorderError.message("DeepSeek 没有返回总结。") }
+        onProgress(1)
+        return summary
     }
 
     static func theme(from summary: String) -> String {

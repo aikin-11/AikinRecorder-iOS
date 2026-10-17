@@ -41,13 +41,21 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(items) { item in
-                            SwipeDeleteRow(onDelete: { itemToDelete = item }) {
-                                Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id) }
-                                    .buttonStyle(.plain)
-                            }
-                            .listRowBackground(Color.black)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                            Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id) }
+                                .buttonStyle(.plain)
+                                .listRowBackground(Color.black)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button { itemToDelete = item } label: {
+                                        Text("删除")
+                                            .font(.body.weight(.medium))
+                                            .foregroundStyle(.white)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.35), lineWidth: 0.7))
+                                    }
+                                    .tint(.black)
+                                }
                         }
                     }
                     .listStyle(.plain)
@@ -186,42 +194,6 @@ struct LibraryView: View {
         }
     }
 
-}
-
-private struct SwipeDeleteRow<Content: View>: View {
-    let onDelete: () -> Void
-    @ViewBuilder var content: () -> Content
-    @State private var offset: CGFloat = 0
-
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            Button(action: onDelete) {
-                Text("删除")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.white)
-                    .frame(maxHeight: .infinity)
-                    .frame(width: 72)
-                    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.35), lineWidth: 0.7))
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 0)
-            .padding(.trailing, 0)
-            .opacity(offset < -8 ? 1 : 0)
-            content()
-                .offset(x: offset)
-                .gesture(
-                    DragGesture(minimumDistance: 16)
-                        .onChanged { value in
-                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                            offset = min(0, max(-100, value.translation.width))
-                        }
-                        .onEnded { value in
-                            withAnimation(.snappy) { offset = value.translation.width < -48 ? -96 : 0 }
-                        }
-                )
-        }
-        .clipped()
-    }
 }
 
 private struct RecordingRow: View {

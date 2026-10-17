@@ -259,14 +259,15 @@ struct RecordingDetailView: View {
 
     private func summarize() {
         summarizing = true
-        summaryProgress = 0.15
+        summaryProgress = 0
         showingSummary = true
         let transcript = item.transcript
         Task {
             defer { summarizing = false }
             do {
-                summaryProgress = 0.45
-                item.summary = try await DeepSeekClient.summarize(transcript: transcript)
+                item.summary = try await DeepSeekClient.summarize(transcript: transcript) { value in
+                    Task { @MainActor in summaryProgress = value }
+                }
                 summaryProgress = 1
                 save()
                 let theme = DeepSeekClient.theme(from: item.summary)

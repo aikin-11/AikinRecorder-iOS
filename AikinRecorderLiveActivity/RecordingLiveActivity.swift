@@ -12,21 +12,26 @@ struct RecordingLiveActivity: Widget {
                     Text("AR").font(.headline.weight(.bold)).padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(Recording.compactTime(context.state.elapsed))
+                    Text(context.state.progress >= 0 ? "\(Int(context.state.progress * 100))%" : Recording.compactTime(context.state.elapsed))
                         .font(.headline.monospacedDigit())
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                         .padding(.trailing, 6)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
+                    if context.state.progress >= 0 {
+                        ProgressView(value: context.state.progress)
+                            .padding(.horizontal, 8)
+                    } else {
                     SubtitleRoll(lines: context.state.captions)
                         .padding(.horizontal, 8)
                         .padding(.bottom, 6)
+                    }
                 }
             } compactLeading: {
                 Text("AR").font(.caption.weight(.bold))
             } compactTrailing: {
-                Text(Recording.compactTime(context.state.elapsed))
+                Text(context.state.progress >= 0 ? "\(Int(context.state.progress * 100))%" : Recording.compactTime(context.state.elapsed))
                     .font(.caption2.monospacedDigit())
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
@@ -40,14 +45,18 @@ struct RecordingLiveActivity: Widget {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text("AikinRec")
+                    Text(context.state.progress >= 0 ? "正在转写" : "AikinRec")
                         .font(.subheadline.weight(.semibold))
+                    if context.state.progress >= 0 {
+                        ProgressView(value: context.state.progress)
+                    }
                 }
                 Text(context.state.snippet)
                     .font(.footnote)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, minHeight: 34, maxHeight: 34, alignment: .topLeading)
             }
+            if context.state.progress < 0 {
             VStack(spacing: 6) {
                 Text(Recording.compactTime(context.state.elapsed))
                     .font(.subheadline.monospacedDigit())
@@ -65,6 +74,7 @@ struct RecordingLiveActivity: Widget {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("标记")
+            }
             }
         }
         .frame(height: 96)

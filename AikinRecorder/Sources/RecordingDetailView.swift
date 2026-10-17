@@ -11,10 +11,8 @@ struct RecordingDetailView: View {
     @State private var summarizing = false
     @State private var summaryProgress = 0.0
     @State private var showingSummary = false
-    @State private var transcribing = false
-    @State private var transcriptPaused = false
-    @State private var transcriptProgress = 0.0
-    @State private var speech: SpeechSession?
+    @State private var suggestedTitle = ""
+    @State private var offeringTitle = false
     @State private var findText = ""
     @State private var findIndex = 0
     @State private var showingFind = false
@@ -83,9 +81,9 @@ struct RecordingDetailView: View {
             }
             HStack {
                 Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }
-                if transcribing {
-                    ProgressView(value: transcriptProgress)
-                    Text("\(Int(transcriptProgress * 100))%").font(.caption.monospacedDigit())
+                if store.transcribingID == item.id {
+                    ProgressView(value: store.transcriptProgress)
+                    Text("\(Int(store.transcriptProgress * 100))%").font(.caption.monospacedDigit())
                 }
                 Spacer()
             }
@@ -119,7 +117,7 @@ struct RecordingDetailView: View {
                     Button("重命名", systemImage: "pencil") { titleDraft = item.title; showingRename = true }
                     Button("分享音频", systemImage: "waveform") { share(audio: true) }
                     Button("导出文字", systemImage: "doc.text") { share(audio: false) }.disabled(item.transcript.isEmpty)
-                    Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }
+                    Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }.disabled(store.transcribingID != nil && store.transcribingID != item.id)
                     Button("查找", systemImage: "magnifyingglass") { showingFind = true }
                     Button("标记说明", systemImage: "star") { showingMarks = true }.disabled(item.marks.isEmpty)
                     Button(item.summary.isEmpty ? "会议总结" : "查看总结", systemImage: "sparkles") { openSummary() }
@@ -171,10 +169,19 @@ struct RecordingDetailView: View {
             }
         }
         .onAppear { player.load(store.audioURL(for: item)); findText = initialQuery }
+        .onChange(of: store.recordings.first { $0.id == item.id }?.transcript) {
+            if store.transcribingID == item.id, let latest = store.recordings.first(where: { $0.id == item.id }) {
+                item.lines = latest.lines
+                item.transcript = latest.transcript
+                item.transcribedThrough = latest.transcribedThrough
+            }
+        }
+        .alert("用这个标题替换？", isPresented: $offeringTitle) {
+            Button("替换") { item.title = Recording.cleanTitle(String(suggestedTitle.prefix(16))); save() }
+            Button("保留原标题", role: .cancel) { }
+        } message: { Text(suggestedTitle) }
         .onDisappear {
             player.stop()
-            let service = speech
-            Task { await service?.cancel() }
             save()
         }
     }
@@ -246,6 +253,11 @@ struct RecordingDetailView: View {
                 item.summary = try await DeepSeekClient.summarize(transcript: transcript)
                 summaryProgress = 1
                 save()
+                let theme = DeepSeekClient.theme(from: item.summary)
+                if !theme.isEmpty, theme != item.title {
+                    suggestedTitle = theme
+                    offeringTitle = true
+                }
             } catch {
                 showingSummary = false
                 errorMessage = error.localizedDescription
@@ -254,56 +266,25 @@ struct RecordingDetailView: View {
     }
 
     private var transcriptButtonTitle: String {
-        if transcribing { return transcriptPaused ? "继续转写" : "暂停转写" }
+        if store.transcribingID == item.id { return store.transcriptPaused ? "继续转写" : "暂停转写" }
         if item.transcribedThrough > 1, item.transcribedThrough + 1 < max(item.duration, player.duration) { return "继续转写" }
         return "转写文字"
     }
 
     private func transcriptAction() {
-        if transcribing {
-            transcriptPaused.toggle()
-            speech?.setFilePaused(transcriptPaused)
-            if transcriptPaused {
-                item.transcribedThrough = speech?.submitted ?? item.transcribedThrough
-                save()
-            }
+        if store.transcribingID == item.id {
+            store.toggleTranscriptPause()
             return
         }
-        let resume = item.transcribedThrough > 1 && item.transcribedThrough + 1 < max(item.duration, player.duration)
-        if !resume { item.lines = []; item.transcript = ""; item.transcribedThrough = 0 }
-        transcribeImported(from: resume ? item.transcribedThrough : 0)
-    }
-
-    private func transcribeImported(from start: TimeInterval) {
         player.pause()
-        transcribing = true
-        transcriptPaused = false
-        let kept = item.lines
-        let service = SpeechSession()
-        speech = service
-        service.onProgress = { fraction in
-            transcriptProgress = fraction
-            item.transcribedThrough = service.submitted
+        let resume = item.transcribedThrough > 1 && item.transcribedThrough + 1 < max(item.duration, player.duration)
+        if !resume {
+            item.lines = []
+            item.transcript = ""
+            item.transcribedThrough = 0
+            save()
         }
-        service.onLines = { lines in
-            let fresh = lines.filter { !$0.provisional }.map {
-                TranscriptCue(id: $0.id, time: min(max(0, $0.time), max(item.duration, player.duration, 0.01)), text: $0.text)
-            }
-            item.lines = kept + fresh
-            item.transcript = item.lines.map(\.text).joined(separator: "\n")
-        }
-        Task {
-            defer { transcribing = false; transcriptPaused = false }
-            do {
-                try await service.transcribeFile(store.audioURL(for: item), localeID: "zh-CN", from: start)
-                item.transcribedThrough = max(item.duration, player.duration)
-                save()
-            } catch {
-                item.transcribedThrough = service.submitted
-                save()
-                errorMessage = error.localizedDescription
-            }
-        }
+        store.beginTranscription(item, from: resume ? item.transcribedThrough : 0)
     }
 }
 

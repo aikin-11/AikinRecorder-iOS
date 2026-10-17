@@ -52,4 +52,51 @@ enum DeepSeekClient {
         }
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    static func theme(from summary: String) -> String {
+        let line = summary.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty && !$0.hasPrefix("-") } ?? ""
+        let stripped = line.trimmingCharacters(in: CharacterSet(charactersIn: "#* "))
+        return String(stripped.prefix(16))
+    }
+
+    static func ask(question: String, recordings: [Recording]) async throws -> (answer: String, sources: [UUID]) {
+        let key = DeepSeekSettings.apiKey
+        guard !key.isEmpty else { throw RecorderError.message("请先在设置中填写 DeepSeek API Key。") }
+        let corpus = recordings.filter { !$0.transcript.isEmpty }.prefix(12).map { item in
+            "[\(item.id.uuidString)] \(item.title)\n\(item.transcript.prefix(4_000))"
+        }.joined(separator: "\n\n")
+        guard !corpus.isEmpty else { throw RecorderError.message("还没有可检索的转写文字。") }
+        var request = URLRequest(url: URL(string: "https://api.deepseek.com/chat/completions")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let body: [String: Any] = [
+            "model": "deepseek-chat",
+            "messages": [
+                ["role": "system", "content": "只根据给出的录音转写回答。先写答案，最后一行以「引用：」开头，列出用到的录音 UUID，用逗号分隔。不要编造。"],
+                ["role": "user", "content": "问题：\(question)\n\n\(corpus.prefix(24_000))"]
+            ]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw RecorderError.message("DeepSeek 回答失败。")
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any],
+              let content = message["content"] as? String else {
+            throw RecorderError.message("DeepSeek 没有返回答案。")
+        }
+        var answer = content
+        var sources: [UUID] = []
+        if let range = content.range(of: "引用：") {
+            answer = String(content[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let tail = content[range.upperBound...]
+            sources = tail.split(separator: ",").compactMap { UUID(uuidString: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        }
+        return (answer.isEmpty ? content : answer, sources)
+    }
 }

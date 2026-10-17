@@ -4,6 +4,11 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Environment(LibraryStore.self) private var store
     @State private var query = ""
+    @State private var askMode = false
+    @State private var asking = false
+    @State private var answer = ""
+    @State private var answerSources: [Recording] = []
+    @State private var showingAnswer = false
     @State private var showingRecorder = false
     @State private var showingSettings = false
     @State private var importing = false
@@ -70,9 +75,15 @@ struct LibraryView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 10) {
                     HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("输入标题或内容", text: $query)
+                        Button { askMode.toggle() } label: {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(askMode ? Color.yellow : Color.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(askMode ? "关闭 DeepSeek 提问" : "用 DeepSeek 提问")
+                        TextField(askMode ? "向 DeepSeek 提问" : "输入标题或内容", text: $query)
                             .textInputAutocapitalization(.never)
+                            .onSubmit { if askMode { askDeepSeek() } }
                     }
                     .padding(.horizontal, 12)
                     .frame(height: 44)
@@ -105,9 +116,52 @@ struct LibraryView: View {
                     itemToDelete = nil
                 }
             }
+            .sheet(isPresented: $showingAnswer) {
+                NavigationStack {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            if asking { ProgressView("正在询问 DeepSeek…") }
+                            Text(answer.isEmpty ? "还没有答案。" : answer)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                            if !answerSources.isEmpty {
+                                Text("引用").font(.headline)
+                                ForEach(answerSources) { source in
+                                    Button(source.title) { showingAnswer = false; selectedItem = source }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+                    .navigationTitle("回答")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { showingAnswer = false } } }
+                }
+                .preferredColorScheme(.dark)
+            }
             .alert("提示", isPresented: Binding(get: { errorMessage != nil || store.errorMessage != nil }, set: { if !$0 { errorMessage = nil; store.errorMessage = nil } })) {
                 Button("好") { errorMessage = nil; store.errorMessage = nil }
             } message: { Text(errorMessage ?? store.errorMessage ?? "") }
+        }
+    }
+
+    private func askDeepSeek() {
+        let question = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return }
+        asking = true
+        answer = ""
+        answerSources = []
+        showingAnswer = true
+        let recordings = store.recordings
+        Task {
+            defer { asking = false }
+            do {
+                let result = try await DeepSeekClient.ask(question: question, recordings: recordings)
+                answer = result.answer
+                let ids = Set(result.sources)
+                answerSources = recordings.filter { ids.contains($0.id) }
+            } catch { errorMessage = error.localizedDescription; showingAnswer = false }
         }
     }
 

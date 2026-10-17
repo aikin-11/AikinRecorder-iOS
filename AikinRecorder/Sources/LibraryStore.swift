@@ -1,12 +1,19 @@
 import AVFoundation
 import Observation
+import UIKit
 import UniformTypeIdentifiers
 
 @MainActor @Observable
 final class LibraryStore {
     private(set) var recordings: [Recording] = []
     var errorMessage: String?
+    var transcribingID: UUID?
+    var transcriptProgress = 0.0
+    var transcriptPaused = false
     let directory: URL
+    private var speech: SpeechSession?
+    private var silence: AVAudioPlayer?
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private let indexURL: URL
 
     init(directory: URL? = nil) {
@@ -135,6 +142,111 @@ final class LibraryStore {
         }
         recordings.sort { $0.createdAt > $1.createdAt }
         try? persist()
+    }
+
+    func beginTranscription(_ recording: Recording, from start: TimeInterval) {
+        guard transcribingID == nil else { return }
+        var item = recording
+        if start < 1 { item.lines = []; item.transcript = ""; item.transcribedThrough = 0 }
+        let kept = item.lines
+        transcribingID = item.id
+        transcriptPaused = false
+        transcriptProgress = item.duration > 0 ? min(1, start / item.duration) : 0
+        try? update(item)
+        let service = SpeechSession()
+        speech = service
+        service.onProgress = { [weak self] fraction in
+            guard let self else { return }
+            self.transcriptProgress = fraction
+            if let index = self.recordings.firstIndex(where: { $0.id == item.id }) {
+                self.recordings[index].transcribedThrough = service.submitted
+            }
+            self.pushTranscriptActivity(title: item.title, fraction: fraction)
+        }
+        service.onLines = { [weak self] lines in
+            guard let self, let index = self.recordings.firstIndex(where: { $0.id == item.id }) else { return }
+            let fresh = lines.filter { !$0.provisional }.map {
+                TranscriptCue(id: $0.id, time: max(0, $0.time), text: $0.text)
+            }
+            self.recordings[index].lines = kept + fresh
+            self.recordings[index].transcript = self.recordings[index].lines.map(\.text).joined(separator: "\n")
+            try? self.persist()
+        }
+        holdBackground()
+        RecordingActivity.start(title: item.title, elapsed: 0)
+        pushTranscriptActivity(title: item.title, fraction: transcriptProgress)
+        Task { [weak self] in
+            defer { self?.finishTranscription() }
+            do {
+                guard let self else { return }
+                try await service.transcribeFile(self.audioURL(for: item), localeID: "zh-CN", from: start)
+            } catch {
+                self?.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func toggleTranscriptPause() {
+        transcriptPaused.toggle()
+        speech?.setFilePaused(transcriptPaused)
+        if let id = transcribingID, let index = recordings.firstIndex(where: { $0.id == id }) {
+            recordings[index].transcribedThrough = speech?.submitted ?? recordings[index].transcribedThrough
+            try? persist()
+            pushTranscriptActivity(title: recordings[index].title, fraction: transcriptProgress)
+        }
+    }
+
+    private func pushTranscriptActivity(title: String, fraction: Double) {
+        let percent = "\(Int(fraction * 100))%"
+        RecordingActivity.update(elapsed: fraction, paused: transcriptPaused, snippet: transcriptPaused ? "转写已暂停 \(percent)" : "正在转写 \(percent)", captions: [percent], levels: [], markedUntil: .distantPast, progress: fraction)
+    }
+
+    private func finishTranscription() {
+        if let id = transcribingID, let index = recordings.firstIndex(where: { $0.id == id }) {
+            recordings[index].transcribedThrough = max(recordings[index].transcribedThrough, speech?.submitted ?? 0)
+            try? persist()
+        }
+        transcribingID = nil
+        transcriptPaused = false
+        speech = nil
+        silence?.stop()
+        silence = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
+        }
+        RecordingActivity.end()
+    }
+
+    private func silentLoop() -> URL? {
+        let url = directory.appendingPathComponent("silence.caf")
+        if FileManager.default.fileExists(atPath: url.path) { return url }
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 8_000),
+              let file = try? AVAudioFile(forWriting: url, settings: format.settings) else { return nil }
+        buffer.frameLength = 8_000
+        try? file.write(from: buffer)
+        return url
+    }
+
+    private func holdBackground() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .default)
+        try? session.setActive(true)
+        if silence == nil, let url = silentLoop() {
+            silence = try? AVAudioPlayer(contentsOf: url)
+        }
+        silence?.numberOfLoops = -1
+        silence?.volume = 0
+        silence?.play()
+        if backgroundTask == .invalid {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "transcribe") { [weak self] in
+                guard let self else { return }
+                UIApplication.shared.endBackgroundTask(self.backgroundTask)
+                self.backgroundTask = .invalid
+            }
+        }
     }
 }
 

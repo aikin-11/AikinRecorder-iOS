@@ -13,14 +13,6 @@ struct RecorderView: View {
         @Bindable var model = model
         NavigationStack {
             VStack(spacing: 20) {
-                if model.state == .idle {
-                    Picker("转写方式", selection: $model.transcriptionEngine) {
-                        Text("Apple 本地").tag("local")
-                        Text("阿里云百炼").tag("bailian")
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                }
                 WaveformView(levels: model.levels, moving: model.state == .recording).frame(height: 88).padding(.horizontal)
                 HStack {
                     Text(Recording.timeText(model.elapsed)).font(.title2.monospacedDigit())
@@ -100,11 +92,25 @@ struct RecorderView: View {
     @ViewBuilder private var controls: some View {
         switch model.state {
         case .idle:
-            Button { preparingTask = Task { await model.start(in: store) } } label: {
-                Text("开始").font(.headline).padding(.horizontal, 36).padding(.vertical, 16)
+            HStack(spacing: 12) {
+                Button { preparingTask = Task { await model.start(in: store) } } label: {
+                    Text("开始").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 16)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("开始录音")
+                Menu {
+                    Button("Apple 本地") { model.transcriptionEngine = "local" }
+                    Button("阿里云百炼") { model.transcriptionEngine = "bailian" }
+                } label: {
+                    Text(model.transcriptionEngine == "bailian" ? "百炼" : "本地")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("选择转写模型")
             }
-            .buttonStyle(.glass)
-            .accessibilityLabel("开始录音")
+            .padding(.horizontal, 24)
         case .preparing, .saving:
             ProgressView(model.state == .saving ? "正在保存…" : "正在准备…").padding()
         case .recording, .paused:

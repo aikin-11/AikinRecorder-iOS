@@ -45,10 +45,9 @@ struct LibraryView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "搜索转写内容")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Text("录音列表").font(.title.weight(.bold)).foregroundStyle(.white)
+                    Text("列表").font(.title2.weight(.bold)).foregroundStyle(.white)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingSettings = true } label: { Image(systemName: "gearshape") }
@@ -56,13 +55,32 @@ struct LibraryView: View {
                 }
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
-            .safeAreaInset(edge: .bottom) {
-                GlassEffectContainer(spacing: 16) {
-                    HStack(spacing: 12) {
-                        action("录音实时转写", symbol: "mic") { showingRecorder = true }
-                        action("导入外部音频", symbol: "square.and.arrow.down") { importAudio() }
-                    }.padding(.horizontal, 16).padding(.vertical, 12)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                HStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("搜索转写内容", text: $query)
+                            .textInputAutocapitalization(.never)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 44)
+                    .glassEffect(.regular, in: .capsule)
+                    Menu {
+                        Button("录音实时转写", systemImage: "mic") { showingRecorder = true }
+                        Button("导入外部音频", systemImage: "square.and.arrow.down") { importAudio() }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.glass)
+                    .disabled(importing)
+                    .accessibilityLabel("新建")
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
+                .background(Color.black)
             }
             .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item, initialQuery: query) }
             .sheet(isPresented: $showingRecorder) { RecorderView() }
@@ -92,20 +110,6 @@ struct LibraryView: View {
         }
     }
 
-    private func action(_ title: String, symbol: String, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            Label(title, systemImage: symbol)
-                .font(.headline)
-                .frame(maxWidth: .infinity, minHeight: 56)
-                .padding(.horizontal, 16)
-                .foregroundStyle(.white)
-                .contentShape(RoundedRectangle(cornerRadius: 20))
-        }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(.white.opacity(0.65), lineWidth: 0.7).allowsHitTesting(false))
-        .disabled(importing)
-    }
 }
 
 private struct RecordingRow: View {

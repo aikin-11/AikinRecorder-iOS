@@ -17,7 +17,8 @@ struct LibraryView: View {
     @State private var selectedItem: Recording?
 
     private var items: [Recording] {
-        store.recordings.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.transcript.localizedCaseInsensitiveContains(query) }
+        if askMode { return store.recordings }
+        return store.recordings.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.transcript.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
@@ -40,16 +41,21 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(items) { item in
-                            Button { selectedItem = item } label: { RecordingRow(item: item, query: query) }
+                            Button { selectedItem = item } label: { RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id) }
                                 .buttonStyle(.plain)
-                                .listRowBackground(Color.clear)
+                                .listRowBackground(Color.black)
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                                 .contextMenu {
                                     Button("打开", systemImage: "doc.text") { selectedItem = item }
-                                    Button("删除", systemImage: "trash", role: .destructive) { itemToDelete = item }
+                                    Button("删除", systemImage: "trash") { itemToDelete = item }
                                 }
-                                .swipeActions { Button("删除", role: .destructive) { itemToDelete = item } }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button { itemToDelete = item } label: {
+                                        Text("删除").foregroundStyle(.white)
+                                    }
+                                    .tint(.black)
+                                }
                         }
                     }
                     .listStyle(.plain)
@@ -84,6 +90,15 @@ struct LibraryView: View {
                         TextField(askMode ? "向 DeepSeek 提问" : "输入标题或内容", text: $query)
                             .textInputAutocapitalization(.never)
                             .onSubmit { if askMode { askDeepSeek() } }
+                        if askMode {
+                            Button("提问") { askDeepSeek() }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 12)
+                                .frame(height: 44)
+                                .background(Color.yellow, in: Capsule())
+                                .disabled(asking)
+                        }
                     }
                     .padding(.horizontal, 12)
                     .frame(height: 44)
@@ -193,6 +208,7 @@ struct LibraryView: View {
 private struct RecordingRow: View {
     let item: Recording
     var query = ""
+    var transcribing = false
     var body: some View {
         HStack(spacing: 13) {
             VStack(alignment: .leading, spacing: 7) {
@@ -205,7 +221,10 @@ private struct RecordingRow: View {
                     Text("·")
                     Text(Recording.timeText(item.duration)).monospacedDigit()
                     if !item.summary.isEmpty { Text("· AI处理完毕") }
-                    else if !item.transcript.isEmpty { Text("· 已转写 \(item.transcript.count)字") }
+                    else if !item.transcript.isEmpty {
+                        Text("· 已转写 \(item.transcript.count)字")
+                            .foregroundStyle(transcribing ? Color.yellow : Color.secondary)
+                    }
                 }.font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)

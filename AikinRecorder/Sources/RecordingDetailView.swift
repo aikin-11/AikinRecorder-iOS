@@ -13,6 +13,7 @@ struct RecordingDetailView: View {
     @State private var showingSummary = false
     @State private var suggestedTitle = ""
     @State private var offeringTitle = false
+    @State private var titleReady = false
     @State private var findText = ""
     @State private var findIndex = 0
     @State private var showingFind = false
@@ -162,7 +163,9 @@ struct RecordingDetailView: View {
             }
             .preferredColorScheme(.dark)
         }
-        .sheet(isPresented: $showingSummary) {
+        .sheet(isPresented: $showingSummary, onDismiss: {
+            if titleReady { titleReady = false; offeringTitle = true }
+        }) {
             SummarySheet(summary: item.summary, progress: summaryProgress, working: summarizing) {
                 do { SystemPresenter.share(try store.shareSummary(item)) }
                 catch { errorMessage = error.localizedDescription }
@@ -256,7 +259,7 @@ struct RecordingDetailView: View {
                 let theme = DeepSeekClient.theme(from: item.summary)
                 if !theme.isEmpty, theme != item.title {
                     suggestedTitle = theme
-                    offeringTitle = true
+                    titleReady = true
                 }
             } catch {
                 showingSummary = false

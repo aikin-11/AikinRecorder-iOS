@@ -19,6 +19,7 @@ struct RecorderView: View {
                         if model.hasUnsavedRecording { confirmingClose = true }
                         else { preparingTask?.cancel(); dismiss() }
                     }
+                    .buttonStyle(.glass)
                     .disabled(model.state == .saving)
                     Spacer()
                     Text("录音实时转写").font(.headline)

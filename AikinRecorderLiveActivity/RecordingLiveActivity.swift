@@ -45,7 +45,7 @@ struct RecordingLiveActivity: Widget {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text(context.state.progress >= 0 ? "正在转写" : "AikinRec")
+                    Text("AikinRec")
                         .font(.subheadline.weight(.semibold))
                     if context.state.progress >= 0 {
                         ProgressView(value: context.state.progress)

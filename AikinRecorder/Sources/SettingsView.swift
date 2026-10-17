@@ -13,6 +13,7 @@ struct SettingsView: View {
             Form {
                 Section {
                     NavigationLink("DeepSeek") { DeepSeekSettingsView() }
+                    NavigationLink("会议记忆") { MeetingMemoryView() }
                     NavigationLink("阿里云百炼") { BailianSettingsView() }
                 } header: { Text("模型服务") } footer: {
                     Text("点进去填写密钥。密钥只保存在这台手机。")
@@ -144,6 +145,45 @@ private struct WebDAVSettingsView: View {
             defer { working = false }
             do { try await WebDAVSync.sync(store); message = "同步完成。" }
             catch { message = error.localizedDescription }
+        }
+    }
+}
+
+private struct MeetingMemoryView: View {
+    @State private var memory = MeetingMemory.text
+    @State private var note = ""
+    @State private var working = false
+    @State private var message: String?
+
+    var body: some View {
+        Form {
+            Section {
+                Text(memory.isEmpty ? "还没有记忆。" : memory)
+                    .font(.callout)
+            } header: { Text("当前记忆") }
+            Section {
+                TextField("例如：我是 Aikin，周会讨论产品进度", text: $note, axis: .vertical)
+                Button(working ? "正在整理…" : "发送给 DeepSeek") { send() }
+                    .disabled(working || note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } footer: { Text("DeepSeek 会把这句话补进记忆，也可以纠正原来写错的内容。") }
+        }
+        .navigationTitle("会议记忆")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("好") { message = nil }
+        } message: { Text(message ?? "") }
+    }
+
+    private func send() {
+        let input = note
+        working = true
+        Task {
+            defer { working = false }
+            do {
+                memory = try await DeepSeekClient.reviseMemory(input)
+                MeetingMemory.text = memory
+                note = ""
+            } catch { message = error.localizedDescription }
         }
     }
 }

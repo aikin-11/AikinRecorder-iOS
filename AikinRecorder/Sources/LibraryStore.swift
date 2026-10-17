@@ -1,4 +1,5 @@
 import AVFoundation
+import CryptoKit
 import Observation
 import UIKit
 import UniformTypeIdentifiers
@@ -32,6 +33,18 @@ final class LibraryStore {
 
     func audioURL(for recording: Recording) -> URL { directory.appendingPathComponent(recording.fileName) }
 
+    private static func md5(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = Insecure.MD5()
+        while true {
+            let chunk = handle.readData(ofLength: 1024 * 1024)
+            if chunk.isEmpty { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
     func createDraft() throws -> Recording {
         let id = UUID()
         let draft = Recording(id: id, title: Recording.meetingTitle(), fileName: "\(id.uuidString).m4a",
@@ -60,10 +73,19 @@ final class LibraryStore {
     func importAudio(from source: URL) async throws -> Recording {
         let access = source.startAccessingSecurityScopedResource()
         defer { if access { source.stopAccessingSecurityScopedResource() } }
+        let hash = try Self.md5(of: source)
+        let bytes = ((try? FileManager.default.attributesOfItem(atPath: source.path)[.size]) as? NSNumber)?.int64Value ?? 0
         let asset = AVURLAsset(url: source)
         let tracks = try await asset.loadTracks(withMediaType: .audio)
         guard !tracks.isEmpty else { throw RecorderError.message("这个文件不包含可读取的音频。") }
         let duration = try await asset.load(.duration).seconds
+        let seconds = duration.isFinite ? duration : 0
+        if recordings.contains(where: { item in
+            if !hash.isEmpty && item.sourceHash == hash { return true }
+            return bytes > 0 && item.sourceBytes == bytes && abs(item.duration - seconds) < 1
+        }) {
+            throw RecorderError.message("这份音频已经导入过，未再次复制。")
+        }
         let ext = source.pathExtension.isEmpty ? "m4a" : source.pathExtension.lowercased()
         let id = UUID()
         let fileName = "\(id.uuidString).\(ext)"
@@ -71,7 +93,7 @@ final class LibraryStore {
         if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
         try FileManager.default.copyItem(at: source, to: target)
         let item = Recording(id: id, title: Recording.cleanTitle(source.deletingPathExtension().lastPathComponent),
-                             fileName: fileName, createdAt: .now, duration: duration.isFinite ? duration : 0, transcript: "")
+                             fileName: fileName, createdAt: .now, duration: seconds, transcript: "", sourceHash: hash, sourceBytes: bytes)
         recordings.insert(item, at: 0)
         do { try persist() } catch {
             recordings.removeAll { $0.id == id }

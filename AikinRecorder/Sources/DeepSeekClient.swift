@@ -1,5 +1,12 @@
 import Foundation
 
+enum MeetingMemory {
+    static var text: String {
+        get { UserDefaults.standard.string(forKey: "ds.memory") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "ds.memory") }
+    }
+}
+
 enum DeepSeekSettings {
     static let keyName = "deepseek.apiKey"
     static var apiKey: String {
@@ -34,7 +41,7 @@ enum DeepSeekClient {
         let body: [String: Any] = [
             "model": "deepseek-chat",
             "messages": [
-                ["role": "system", "content": "你是会议记录助手。请用中文根据转写整理会议总结，包含结论、待办和关键发言要点。不要编造转写中没有的事实。"],
+                ["role": "system", "content": "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。已知记忆：\(MeetingMemory.text)"],
                 ["role": "user", "content": String(transcript.prefix(24_000))]
             ]
         ]
@@ -54,20 +61,45 @@ enum DeepSeekClient {
     }
 
     static func theme(from summary: String) -> String {
-        let line = summary.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty && !$0.hasPrefix("-") } ?? ""
-        let stripped = line.trimmingCharacters(in: CharacterSet(charactersIn: "#* "))
+        let lines = summary.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        let marked = lines.first { $0.trimmingCharacters(in: .whitespaces).hasPrefix("主题：") }
+        let line = marked ?? lines.first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
+        let stripped = line.replacingOccurrences(of: "主题：", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "#* "))
         return String(stripped.prefix(16))
+    }
+
+    static func reviseMemory(_ note: String) async throws -> String {
+        try await complete(system: "你维护一份给会议助手用的记忆。根据用户的新说明修正错误、补充事实，输出更新后的完整记忆。用简短中文，不要寒暄。", user: "当前记忆：\n\(MeetingMemory.text)\n\n新说明：\n\(note)")
+    }
+
+    private static func complete(system: String, user: String) async throws -> String {
+        let key = DeepSeekSettings.apiKey
+        guard !key.isEmpty else { throw RecorderError.message("请先填写 DeepSeek API Key。") }
+        var request = URLRequest(url: URL(string: "https://api.deepseek.com/chat/completions")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let body: [String: Any] = ["model": "deepseek-chat", "messages": [["role": "system", "content": system], ["role": "user", "content": user]]]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any],
+              let content = message["content"] as? String else {
+            throw RecorderError.message("DeepSeek 没有返回内容。")
+        }
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func ask(question: String, recordings: [Recording]) async throws -> (answer: String, sources: [UUID]) {
         let key = DeepSeekSettings.apiKey
         guard !key.isEmpty else { throw RecorderError.message("请先在设置中填写 DeepSeek API Key。") }
-        let corpus = recordings.filter { !$0.transcript.isEmpty }.prefix(12).map { item in
-            "[\(item.id.uuidString)] \(item.title)\n\(item.transcript.prefix(4_000))"
+        guard !recordings.isEmpty else { throw RecorderError.message("还没有录音可以提问。") }
+        let corpus = recordings.prefix(20).map { item in
+            let date = item.createdAt.formatted(date: .numeric, time: .shortened)
+            "[\(item.id.uuidString)] \(date) 时长\(Int(item.duration))秒 字数\(item.transcript.count) 标题：\(item.title)\n总结：\(item.summary.prefix(400))\n转写：\(item.transcript.prefix(2_000))"
         }.joined(separator: "\n\n")
-        guard !corpus.isEmpty else { throw RecorderError.message("还没有可检索的转写文字。") }
         var request = URLRequest(url: URL(string: "https://api.deepseek.com/chat/completions")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -75,7 +107,7 @@ enum DeepSeekClient {
         let body: [String: Any] = [
             "model": "deepseek-chat",
             "messages": [
-                ["role": "system", "content": "只根据给出的录音转写回答。先写答案，最后一行以「引用：」开头，列出用到的录音 UUID，用逗号分隔。不要编造。"],
+                ["role": "system", "content": "你是会议资料助手。先理解问题，再根据每条录音的日期、时长、字数、标题、总结和转写作统计或查找，不要只匹配关键词。可以回答这周开了几次会、转写了多少字、最长会议是什么时候、讲了什么，也可以按主题找录音。先写答案，最后一行以「引用：」开头列出用到的 UUID，逗号分隔。已知记忆：\(MeetingMemory.text)"],
                 ["role": "user", "content": "问题：\(question)\n\n\(corpus.prefix(24_000))"]
             ]
         ]

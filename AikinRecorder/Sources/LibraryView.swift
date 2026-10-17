@@ -10,6 +10,7 @@ struct LibraryView: View {
     @State private var answerSources: [Recording] = []
     @State private var showingAnswer = false
     @State private var showingRecorder = false
+    @State private var showingAdd = false
     @State private var showingSettings = false
     @State private var importing = false
     @State private var errorMessage: String?
@@ -52,7 +53,11 @@ struct LibraryView: View {
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button { itemToDelete = item } label: {
-                                        Text("删除").foregroundStyle(.white)
+                                        Text("删除")
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 8)
+                                            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white, lineWidth: 1))
                                     }
                                     .tint(.black)
                                 }
@@ -90,23 +95,11 @@ struct LibraryView: View {
                         TextField(askMode ? "向 DeepSeek 提问" : "输入标题或内容", text: $query)
                             .textInputAutocapitalization(.never)
                             .onSubmit { if askMode { askDeepSeek() } }
-                        if askMode {
-                            Button("提问") { askDeepSeek() }
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 12)
-                                .frame(height: 44)
-                                .background(Color.yellow, in: Capsule())
-                                .disabled(asking)
-                        }
                     }
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .glassEffect(.regular, in: .capsule)
-                    Menu {
-                        Button("录音实时转写", systemImage: "mic") { showingRecorder = true }
-                        Button("导入外部音频", systemImage: "square.and.arrow.down") { importAudio() }
-                    } label: {
+                    Button { showingAdd = true } label: {
                         Image(systemName: "plus")
                             .font(.body.weight(.semibold))
                             .frame(width: 44, height: 44)
@@ -125,7 +118,12 @@ struct LibraryView: View {
             .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item, initialQuery: query) }
             .sheet(isPresented: $showingRecorder) { RecorderView() }
             .overlay { if importing { ProgressView("正在导入…").padding(24).glassEffect(in: .rect(cornerRadius: 20)) } }
-            .confirmationDialog("删除这条录音及转写文字？", isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }), titleVisibility: .visible) {
+            .confirmationDialog("选择操作", isPresented: $showingAdd, titleVisibility: .visible) {
+                Button("录音实时转写") { showingRecorder = true }
+                Button("导入外部音频") { importAudio() }
+                Button("取消", role: .cancel) { }
+            }
+            .confirmationDialog("确定要删除吗？", isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }), titleVisibility: .visible) {
                 Button("删除录音", role: .destructive) {
                     if let item = itemToDelete { do { try store.remove(item) } catch { errorMessage = error.localizedDescription } }
                     itemToDelete = nil

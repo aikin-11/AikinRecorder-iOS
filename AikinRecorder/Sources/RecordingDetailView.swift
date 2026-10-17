@@ -19,6 +19,7 @@ struct RecordingDetailView: View {
     @State private var showingFind = false
     @State private var showingMarks = false
     @State private var transcriptScrubbing = false
+    @State private var confirmingRetranscribe = false
 
     var body: some View {
         @Bindable var player = player
@@ -51,11 +52,10 @@ struct RecordingDetailView: View {
                                     .frame(width: 78, alignment: .leading)
                                     Text(highlighted(line.text))
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                        .textSelection(.enabled)
                                         .padding(8)
                                         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(activeLineID == line.id ? Color.white : Color.clear, lineWidth: 1.4))
                                         .contentShape(Rectangle())
-                                        .onTapGesture { player.play(from: alignedTime(line)) }
+                                        .highPriorityGesture(TapGesture().onEnded { player.play(from: alignedTime(line)) })
                                 }
                                 .id(line.id)
                             }
@@ -65,6 +65,10 @@ struct RecordingDetailView: View {
                 }
                 .onChange(of: item.lines.count) {
                     if let id = item.lines.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+                }
+                .onChange(of: item.transcript) {
+                    guard store.transcribingID == item.id, let id = item.lines.last?.id else { return }
+                    proxy.scrollTo(id, anchor: .bottom)
                 }
                 .onChange(of: activeLineID) {
                     guard player.isPlaying, let id = activeLineID else { return }
@@ -179,6 +183,9 @@ struct RecordingDetailView: View {
                 item.transcribedThrough = latest.transcribedThrough
             }
         }
+        .confirmationDialog("重新转写会替换现有文字", isPresented: $confirmingRetranscribe, titleVisibility: .visible) {
+            Button("重新转写", role: .destructive) { startTranscription(replacing: true) }
+        }
         .alert("用这个标题替换？", isPresented: $offeringTitle) {
             Button("替换") { item.title = Recording.cleanTitle(String(suggestedTitle.prefix(16))); save() }
             Button("保留原标题", role: .cancel) { }
@@ -279,15 +286,23 @@ struct RecordingDetailView: View {
             store.toggleTranscriptPause()
             return
         }
-        player.pause()
         let resume = item.transcribedThrough > 1 && item.transcribedThrough + 1 < max(item.duration, player.duration)
-        if !resume {
+        if !resume && !item.transcript.isEmpty {
+            confirmingRetranscribe = true
+            return
+        }
+        startTranscription(replacing: !resume)
+    }
+
+    private func startTranscription(replacing: Bool) {
+        player.pause()
+        if replacing {
             item.lines = []
             item.transcript = ""
             item.transcribedThrough = 0
             save()
         }
-        store.beginTranscription(item, from: resume ? item.transcribedThrough : 0)
+        store.beginTranscription(item, from: replacing ? 0 : item.transcribedThrough)
     }
 }
 

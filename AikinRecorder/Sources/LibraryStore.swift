@@ -1,3 +1,4 @@
+import ActivityKit
 import AVFoundation
 import CryptoKit
 import Observation
@@ -13,6 +14,7 @@ final class LibraryStore {
     var transcriptPaused = false
     let directory: URL
     private var speech: SpeechSession?
+    private var lastTranscriptSave: Date?
     private var silence: AVAudioPlayer?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private let indexURL: URL
@@ -192,7 +194,11 @@ final class LibraryStore {
             }
             self.recordings[index].lines = kept + fresh
             self.recordings[index].transcript = self.recordings[index].lines.map(\.text).joined(separator: "\n")
-            try? self.persist()
+            let now = Date()
+            if self.lastTranscriptSave == nil || now.timeIntervalSince(self.lastTranscriptSave!) > 1.5 {
+                self.lastTranscriptSave = now
+                try? self.persist()
+            }
         }
         holdBackground()
         RecordingActivity.start(title: item.title, elapsed: 0)
@@ -219,6 +225,9 @@ final class LibraryStore {
     }
 
     private func pushTranscriptActivity(title: String, fraction: Double) {
+        if Activity<RecordingActivityAttributes>.activities.isEmpty {
+            RecordingActivity.start(title: title, elapsed: fraction)
+        }
         let percent = "\(Int(fraction * 100))%"
         RecordingActivity.update(elapsed: fraction, paused: transcriptPaused, snippet: transcriptPaused ? "转写已暂停 \(percent)" : "正在转写 \(percent)", captions: [percent], levels: [], markedUntil: .distantPast, progress: fraction)
     }

@@ -13,10 +13,14 @@ struct SettingsView: View {
             Form {
                 Section {
                     NavigationLink("DeepSeek") { DeepSeekSettingsView() }
-                    NavigationLink("会议记忆") { MeetingMemoryView() }
                     NavigationLink("阿里云百炼") { BailianSettingsView() }
                 } header: { Text("模型服务") } footer: {
                     Text("点进去填写密钥。密钥只保存在这台手机。")
+                }
+                Section {
+                    NavigationLink("我的记忆") { MeetingMemoryView() }
+                } footer: {
+                    Text("告诉 DeepSeek 你是谁、会议在做什么。它会记住，也可以改正。")
                 }
                 Section {
                     NavigationLink {
@@ -167,7 +171,7 @@ private struct MeetingMemoryView: View {
                     .disabled(working || note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } footer: { Text("DeepSeek 会把这句话补进记忆，也可以纠正原来写错的内容。") }
         }
-        .navigationTitle("会议记忆")
+        .navigationTitle("我的记忆")
         .navigationBarTitleDisplayMode(.inline)
         .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("好") { message = nil }

@@ -14,7 +14,10 @@ print(phones[0]['udid'])
 PY
 )
 xcrun simctl boot "$device" || true
-xcrun simctl bootstatus "$device" -b
+python3 - "$device" <<'PY'
+import subprocess,sys
+subprocess.run(['xcrun','simctl','bootstatus',sys.argv[1],'-b'],check=True,timeout=180)
+PY
 xcodebuild -project AikinRecorder.xcodeproj -scheme AikinRecorder \
   -configuration Debug -destination "platform=iOS Simulator,id=$device" \
   -derivedDataPath build/simulator -parallel-testing-enabled NO \
@@ -25,3 +28,4 @@ xcrun simctl status_bar "$device" override --time '9:41' --dataNetwork wifi --wi
 xcrun simctl launch "$device" app.aikin.recorder
 sleep 3
 xcrun simctl io "$device" screenshot build/artifacts/iPhone-library.png
+

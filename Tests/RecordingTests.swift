@@ -1,7 +1,30 @@
 import XCTest
+import AVFoundation
 @testable import AikinRecorder
 
 final class RecordingTests: XCTestCase {
+    func testCaptureWritesPlayableM4AAudio() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("m4a")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000))
+        buffer.frameLength = 48_000
+        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+        for index in 0..<48_000 { samples[index] = sin(Float(index) * 2 * .pi * 440 / 48_000) * 0.2 }
+        let level = expectation(description: "Audio pipeline reads non-silent samples")
+        let capture = try AudioCapture(url: url, inputFormat: format, analyzerFormat: nil, continuation: nil,
+            onLevel: { value in if value > 0.01 { level.fulfill() } },
+            onFailure: { message in XCTFail(message) })
+        capture.append(buffer)
+        await capture.close()
+        await fulfillment(of: [level], timeout: 3)
+        let audio = try AVAudioFile(forReading: url)
+        XCTAssertGreaterThan(Double(audio.length) / audio.processingFormat.sampleRate, 0.9)
+        let decoded = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: 1024))
+        try audio.read(into: decoded)
+        XCTAssertGreaterThan(decoded.frameLength, 0)
+    }
+
     func testMeetingNameUsesShanghaiTimeAndHasNoCollisionProneSequence() {
         let formatter = ISO8601DateFormatter()
         let date = formatter.date(from: "2026-10-17T07:32:00Z")!
@@ -52,3 +75,4 @@ final class RecordingTests: XCTestCase {
         XCTAssertEqual(store.recordings.map(\.fileName), ["orphan.m4a"])
     }
 }
+

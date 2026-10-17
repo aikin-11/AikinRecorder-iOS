@@ -44,19 +44,19 @@ struct LibraryView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Text("AikinREC")
-                        .font(.custom("SpecialElite-Regular", size: 22))
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack {
+                    Text("AikinRec")
+                        .font(.title2.weight(.semibold))
                         .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
+                    Spacer()
                     Button { showingSettings = true } label: { Image(systemName: "gearshape") }
                         .accessibilityLabel("设置")
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+                .background(Color.black)
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .safeAreaInset(edge: .bottom, spacing: 0) {

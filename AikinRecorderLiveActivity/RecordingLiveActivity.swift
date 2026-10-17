@@ -9,9 +9,7 @@ struct RecordingLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    WaveLines(levels: context.state.levels, paused: context.state.paused)
-                        .frame(width: 54, height: 28)
-                        .padding(.leading, 4)
+                    Text("AR").font(.headline.weight(.bold)).padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(Recording.compactTime(context.state.elapsed))
@@ -26,16 +24,14 @@ struct RecordingLiveActivity: Widget {
                         .padding(.bottom, 6)
                 }
             } compactLeading: {
-                WaveLines(levels: context.state.levels, paused: context.state.paused)
-                    .frame(width: 28, height: 16)
+                Text("AR").font(.caption.weight(.bold))
             } compactTrailing: {
                 Text(Recording.compactTime(context.state.elapsed))
                     .font(.caption2.monospacedDigit())
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
             } minimal: {
-                WaveLines(levels: context.state.levels, paused: context.state.paused)
-                    .frame(width: 18, height: 12)
+                Text("AR").font(.caption2.weight(.bold))
             }
         }
     }
@@ -44,8 +40,7 @@ struct RecordingLiveActivity: Widget {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    WaveLines(levels: context.state.levels, paused: context.state.paused)
-                        .frame(width: 46, height: 18)
+                    Text("AR").font(.subheadline.weight(.bold))
                     Text("AikinRec")
                         .font(.subheadline.weight(.semibold))
                 }

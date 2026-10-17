@@ -211,7 +211,7 @@ final class RecorderModel {
     private func pushActivity(force: Bool) {
         guard state == .recording || state == .paused else { return }
         let now = Date()
-        if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 0.12 { return }
+        if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 0.05 { return }
         lastActivityUpdate = now
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
         let captions = lines.suffix(4).map { String($0.text.prefix(40)) }
@@ -221,14 +221,16 @@ final class RecorderModel {
     private func applyBailian(_ text: String, finished: Bool) {
         let spoken = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !spoken.isEmpty else { return }
-        if finished {
-            if lines.last?.provisional == true { lines.removeLast() }
-            lines.append(TranscriptLine(time: elapsed, text: spoken, provisional: false))
-        } else if lines.last?.provisional == true {
-            lines[lines.count - 1].text = spoken
-        } else {
-            lines.append(TranscriptLine(time: elapsed, text: spoken, provisional: true))
+        if let index = lines.indices.last {
+            let previous = lines[index].text
+            if lines[index].provisional || spoken.hasPrefix(previous) || previous.hasPrefix(spoken) {
+                lines[index].text = spoken
+                lines[index].provisional = !finished
+                pushActivity(force: true)
+                return
+            }
         }
+        lines.append(TranscriptLine(time: elapsed, text: spoken, provisional: !finished))
         pushActivity(force: true)
     }
 

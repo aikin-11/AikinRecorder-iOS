@@ -131,7 +131,7 @@ final class BailianRealtime: @unchecked Sendable {
                   let output = payload["output"] as? [String: Any],
                   let sentence = output["sentence"] as? [String: Any],
                   let spoken = sentence["text"] as? String else { return }
-            let finished = sentence["end_time"] != nil || (sentence["sentence_end"] as? Bool) == true
+            let finished = (sentence["sentence_end"] as? Bool) == true
             onText?(spoken, finished)
         case "task-failed":
             onStatus?("百炼转写失败：\(header["error_message"] as? String ?? "未知错误")")

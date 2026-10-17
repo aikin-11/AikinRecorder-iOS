@@ -8,6 +8,7 @@ struct RecorderView: View {
     @State private var confirmingClose = false
     @State private var showingRename = false
     @State private var titleDraft = ""
+    @State private var markLit = false
 
     var body: some View {
         @Bindable var model = model
@@ -127,8 +128,17 @@ struct RecorderView: View {
                         Label(model.state == .paused ? "继续" : "暂停", systemImage: model.state == .paused ? "play.fill" : "pause.fill")
                             .padding(.horizontal, 16).padding(.vertical, 16)
                     }.buttonStyle(.glass)
-                    Button { model.addMark() } label: {
-                        Label("标记", systemImage: "bookmark").padding(.horizontal, 16).padding(.vertical, 16)
+                    Button {
+                        model.addMark()
+                        markLit = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            markLit = false
+                        }
+                    } label: {
+                        Label("标记", systemImage: markLit ? "bookmark.fill" : "bookmark")
+                            .foregroundStyle(markLit ? Color.yellow : Color.white)
+                            .padding(.horizontal, 16).padding(.vertical, 16)
                     }.buttonStyle(.glass)
                     Button { titleDraft = model.title; showingRename = true } label: {
                         Label("保存", systemImage: "stop.fill").padding(.horizontal, 16).padding(.vertical, 16)

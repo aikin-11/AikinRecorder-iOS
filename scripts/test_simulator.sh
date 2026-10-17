@@ -29,4 +29,3 @@ xcrun simctl status_bar "$device" override --time '9:41' --dataNetwork wifi --wi
 xcrun simctl launch "$device" app.aikin.recorder
 sleep 3
 xcrun simctl io "$device" screenshot build/artifacts/iPhone-library.png
-

@@ -33,10 +33,29 @@ struct RecorderView: View {
                     }.padding(20).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal)
                 }
                 ScrollView {
-                    Text(model.transcript.isEmpty ? "靠近手机讲话，转写文字会显示在这里。" : model.transcript)
-                        .foregroundStyle(model.transcript.isEmpty ? .secondary : .primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled).padding(20)
+                    if model.lines.isEmpty {
+                        Text("靠近手机讲话，转写文字会显示在这里。")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(20)
+                    } else {
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(model.lines) { line in
+                                HStack(alignment: .top, spacing: 12) {
+                                    Text(Recording.timeText(line.time))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 64, alignment: .leading)
+                                        .accessibilityLabel("时间 \(Recording.timeText(line.time))")
+                                    Text(line.text)
+                                        .foregroundStyle(line.provisional ? .secondary : .primary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+                        .padding(20)
+                    }
                 }
                 controls.padding(.bottom, 20)
             }

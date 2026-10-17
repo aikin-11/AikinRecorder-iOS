@@ -28,6 +28,8 @@ def refs(ids):
     return '(' + ', '.join(ids) + ',)'
 
 app_sources, test_sources, resources, source_refs, test_refs, resource_refs = [], [], [], [], [], []
+widget_sources, widget_refs = [], []
+shared_for_widget = {'AikinRecorder/Sources/Recording.swift', 'AikinRecorder/Sources/RecordingActivity.swift'}
 for path in sorted((ROOT / 'AikinRecorder/Sources').glob('*.swift')) + sorted((ROOT / 'Tests').glob('*.swift')):
     relative = path.relative_to(ROOT).as_posix()
     ref = add(relative, '{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ' + quote(relative) + '; sourceTree = SOURCE_ROOT;}')
@@ -36,22 +38,33 @@ for path in sorted((ROOT / 'AikinRecorder/Sources').glob('*.swift')) + sorted((R
         test_sources.append(build); test_refs.append(ref)
     else:
         app_sources.append(build); source_refs.append(ref)
+        if relative in shared_for_widget:
+            widget_sources.append(add(relative + ':widget', '{isa = PBXBuildFile; fileRef = ' + ref + ';}'))
+for path in sorted((ROOT / 'AikinRecorderLiveActivity').glob('*.swift')):
+    relative = path.relative_to(ROOT).as_posix()
+    ref = add(relative, '{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ' + quote(relative) + '; sourceTree = SOURCE_ROOT;}')
+    widget_sources.append(add(relative + ':build', '{isa = PBXBuildFile; fileRef = ' + ref + ';}'))
+    widget_refs.append(ref)
 for relative, kind in [('AikinRecorder/Resources/Assets.xcassets', 'folder.assetcatalog'), ('AikinRecorder/Resources/SpecialElite-Regular.ttf', 'file'), ('AikinRecorder/Resources/SpecialElite-LICENSE.txt', 'text'), ('AikinRecorder/Resources/PrivacyInfo.xcprivacy', 'text.xml')]:
     ref = add(relative, '{isa = PBXFileReference; lastKnownFileType = ' + kind + '; path = ' + quote(relative) + '; sourceTree = SOURCE_ROOT;}')
     resources.append(add(relative + ':build', '{isa = PBXBuildFile; fileRef = ' + ref + ';}')); resource_refs.append(ref)
 
 app_product = add('appProduct', '{isa = PBXFileReference; explicitFileType = wrapper.application; path = AikinRecorder.app; sourceTree = BUILT_PRODUCTS_DIR;}')
 test_product = add('testProduct', '{isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = AikinRecorderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR;}')
+widget_product = add('widgetProduct', '{isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = AikinRecorderLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR;}')
+widget_embed = add('widgetEmbed', '{isa = PBXBuildFile; fileRef = ' + widget_product + '; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);};}')
 src_group = add('sourcesGroup', '{isa = PBXGroup; children = ' + refs(source_refs) + '; name = Sources; sourceTree = "<group>";}')
 res_group = add('resourcesGroup', '{isa = PBXGroup; children = ' + refs(resource_refs) + '; name = Resources; sourceTree = "<group>";}')
 test_group = add('testsGroup', '{isa = PBXGroup; children = ' + refs(test_refs) + '; name = Tests; sourceTree = "<group>";}')
-products = add('products', '{isa = PBXGroup; children = ' + refs([app_product, test_product]) + '; name = Products; sourceTree = "<group>";}')
-main_group = add('mainGroup', '{isa = PBXGroup; children = ' + refs([src_group, res_group, test_group, products]) + '; sourceTree = "<group>";}')
-for name, isa, files in [('appSources', 'PBXSourcesBuildPhase', app_sources), ('testSources', 'PBXSourcesBuildPhase', test_sources), ('appResources', 'PBXResourcesBuildPhase', resources), ('appFrameworks', 'PBXFrameworksBuildPhase', []), ('testFrameworks', 'PBXFrameworksBuildPhase', [])]:
+widget_group = add('widgetGroup', '{isa = PBXGroup; children = ' + refs(widget_refs) + '; name = LiveActivity; sourceTree = "<group>";}')
+products = add('products', '{isa = PBXGroup; children = ' + refs([app_product, test_product, widget_product]) + '; name = Products; sourceTree = "<group>";}')
+main_group = add('mainGroup', '{isa = PBXGroup; children = ' + refs([src_group, res_group, test_group, widget_group, products]) + '; sourceTree = "<group>";}')
+for name, isa, files in [('appSources', 'PBXSourcesBuildPhase', app_sources), ('testSources', 'PBXSourcesBuildPhase', test_sources), ('widgetSources', 'PBXSourcesBuildPhase', widget_sources), ('appResources', 'PBXResourcesBuildPhase', resources), ('appFrameworks', 'PBXFrameworksBuildPhase', []), ('testFrameworks', 'PBXFrameworksBuildPhase', []), ('widgetFrameworks', 'PBXFrameworksBuildPhase', [])]:
     add(name, '{isa = ' + isa + '; buildActionMask = 2147483647; files = ' + (refs(files) if files else '()') + '; runOnlyForDeploymentPostprocessing = 0;}')
+add('embedWidgets', '{isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = ' + refs([widget_embed]) + '; name = "Embed Foundation Extensions"; runOnlyForDeploymentPostprocessing = 0;}')
 
 config_lists = {}
-for owner in ['project', 'app', 'test']:
+for owner in ['project', 'app', 'test', 'widget']:
     configs = []
     for mode in ['Debug', 'Release']:
         cfg = {'IPHONEOS_DEPLOYMENT_TARGET': '26.0', 'SDKROOT': 'iphoneos', 'SWIFT_VERSION': '5.0', 'CLANG_ENABLE_MODULES': 'YES', 'ENABLE_USER_SCRIPT_SANDBOXING': 'YES', 'CODE_SIGNING_ALLOWED': 'NO'}
@@ -63,17 +76,23 @@ for owner in ['project', 'app', 'test']:
             cfg.update(PRODUCT_NAME='AikinRecorder', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorder/Resources/Info.plist', GENERATE_INFOPLIST_FILE='NO', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', SUPPORTS_MACCATALYST='NO', CURRENT_PROJECT_VERSION='1', MARKETING_VERSION='1.0.0')
         if owner == 'test':
             cfg.update(PRODUCT_NAME='AikinRecorderTests', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.tests', GENERATE_INFOPLIST_FILE='YES', TEST_HOST='$(BUILT_PRODUCTS_DIR)/AikinRecorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AikinRecorder', BUNDLE_LOADER='$(TEST_HOST)', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @loader_path/Frameworks', TARGETED_DEVICE_FAMILY='1,2')
+        if owner == 'widget':
+            cfg.update(PRODUCT_NAME='AikinRecorderLiveActivity', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.liveactivity', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorderLiveActivity/Info.plist', GENERATE_INFOPLIST_FILE='NO', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', CURRENT_PROJECT_VERSION='1', MARKETING_VERSION='1.0.0')
         configs.append(add(owner + mode, '{isa = XCBuildConfiguration; buildSettings = ' + settings(cfg) + '; name = ' + mode + ';}'))
     config_lists[owner] = add(owner + 'Configs', '{isa = XCConfigurationList; buildConfigurations = ' + refs(configs) + '; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;}')
 
 project_id = uid('project')
 app_target = uid('appTarget')
 test_target = uid('testTarget')
+widget_target = uid('widgetTarget')
 proxy = add('proxy', '{isa = PBXContainerItemProxy; containerPortal = ' + project_id + '; proxyType = 1; remoteGlobalIDString = ' + app_target + '; remoteInfo = AikinRecorder;}')
+widget_proxy = add('widgetProxy', '{isa = PBXContainerItemProxy; containerPortal = ' + project_id + '; proxyType = 1; remoteGlobalIDString = ' + widget_target + '; remoteInfo = AikinRecorderLiveActivity;}')
 dependency = add('testDependency', '{isa = PBXTargetDependency; target = ' + app_target + '; targetProxy = ' + proxy + ';}')
-add('appTarget', '{isa = PBXNativeTarget; buildConfigurationList = ' + config_lists['app'] + '; buildPhases = ' + refs([uid('appSources'), uid('appFrameworks'), uid('appResources')]) + '; buildRules = (); dependencies = (); name = AikinRecorder; productName = AikinRecorder; productReference = ' + app_product + '; productType = "com.apple.product-type.application";}')
+widget_dependency = add('widgetDependency', '{isa = PBXTargetDependency; target = ' + widget_target + '; targetProxy = ' + widget_proxy + ';}')
+add('widgetTarget', '{isa = PBXNativeTarget; buildConfigurationList = ' + config_lists['widget'] + '; buildPhases = ' + refs([uid('widgetSources'), uid('widgetFrameworks')]) + '; buildRules = (); dependencies = (); name = AikinRecorderLiveActivity; productName = AikinRecorderLiveActivity; productReference = ' + widget_product + '; productType = "com.apple.product-type.app-extension";}')
+add('appTarget', '{isa = PBXNativeTarget; buildConfigurationList = ' + config_lists['app'] + '; buildPhases = ' + refs([uid('appSources'), uid('appFrameworks'), uid('appResources'), uid('embedWidgets')]) + '; buildRules = (); dependencies = ' + refs([widget_dependency]) + '; name = AikinRecorder; productName = AikinRecorder; productReference = ' + app_product + '; productType = "com.apple.product-type.application";}')
 add('testTarget', '{isa = PBXNativeTarget; buildConfigurationList = ' + config_lists['test'] + '; buildPhases = ' + refs([uid('testSources'), uid('testFrameworks')]) + '; buildRules = (); dependencies = ' + refs([dependency]) + '; name = AikinRecorderTests; productName = AikinRecorderTests; productReference = ' + test_product + '; productType = "com.apple.product-type.bundle.unit-test";}')
-add('project', '{isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2600;}; buildConfigurationList = ' + config_lists['project'] + '; compatibilityVersion = "Xcode 15.0"; developmentRegion = zh_CN; hasScannedForEncodings = 0; knownRegions = (zh_CN, en, Base); mainGroup = ' + main_group + '; productRefGroup = ' + products + '; projectDirPath = ""; projectRoot = ""; targets = ' + refs([app_target, test_target]) + ';}')
+add('project', '{isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2600;}; buildConfigurationList = ' + config_lists['project'] + '; compatibilityVersion = "Xcode 15.0"; developmentRegion = zh_CN; hasScannedForEncodings = 0; knownRegions = (zh_CN, en, Base); mainGroup = ' + main_group + '; productRefGroup = ' + products + '; projectDirPath = ""; projectRoot = ""; targets = ' + refs([app_target, widget_target, test_target]) + ';}')
 (PROJECT / 'project.pbxproj').write_text('// !$*UTF8*$!\n{ archiveVersion = 1; classes = {}; objectVersion = 60; objects = {\n' + '\n'.join(f'{key} = {value};' for key, value in objects.items()) + '\n}; rootObject = ' + project_id + ';}\n', encoding='utf-8')
 scheme_dir = PROJECT / 'xcshareddata/xcschemes'
 scheme_dir.mkdir(parents=True, exist_ok=True)
@@ -89,7 +108,7 @@ scheme = f'''<?xml version="1.0" encoding="UTF-8"?>
 </Scheme>'''
 (scheme_dir / 'AikinRecorder.xcscheme').write_text(scheme, encoding='utf-8')
 
-info = {'CFBundleDisplayName': 'Aikin录音', 'CFBundleName': 'AikinRecorder', 'CFBundleIdentifier': '$(PRODUCT_BUNDLE_IDENTIFIER)', 'CFBundleExecutable': '$(EXECUTABLE_NAME)', 'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '$(MARKETING_VERSION)', 'CFBundleVersion': '$(CURRENT_PROJECT_VERSION)', 'LSRequiresIPhoneOS': True, 'ITSAppUsesNonExemptEncryption': False, 'NSMicrophoneUsageDescription': '录制会议音频，并在你开启实时转写时将语音转换为文字。', 'NSSpeechRecognitionUsageDescription': '使用 Apple 语音识别将你选择的录音转换为文字。', 'UIBackgroundModes': ['audio'], 'UIUserInterfaceStyle': 'Dark', 'UILaunchScreen': {'UIColorName': 'LaunchBackground'}, 'UIAppFonts': ['SpecialElite-Regular.ttf'], 'UIApplicationSceneManifest': {'UIApplicationSupportsMultipleScenes': False}, 'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'], 'UISupportedInterfaceOrientations~ipad': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight']}
+info = {'CFBundleDisplayName': 'Aikin录音', 'CFBundleName': 'AikinRecorder', 'CFBundleIdentifier': '$(PRODUCT_BUNDLE_IDENTIFIER)', 'CFBundleExecutable': '$(EXECUTABLE_NAME)', 'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '$(MARKETING_VERSION)', 'CFBundleVersion': '$(CURRENT_PROJECT_VERSION)', 'LSRequiresIPhoneOS': True, 'ITSAppUsesNonExemptEncryption': False, 'NSMicrophoneUsageDescription': '录制会议音频，并在你开启实时转写时将语音转换为文字。', 'NSSpeechRecognitionUsageDescription': '使用 Apple 语音识别将你选择的录音转换为文字。', 'NSSupportsLiveActivities': True, 'UIBackgroundModes': ['audio'], 'UIUserInterfaceStyle': 'Dark', 'UILaunchScreen': {'UIColorName': 'LaunchBackground'}, 'UIAppFonts': ['SpecialElite-Regular.ttf'], 'UIApplicationSceneManifest': {'UIApplicationSupportsMultipleScenes': False}, 'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'], 'UISupportedInterfaceOrientations~ipad': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight']}
 (ROOT / 'AikinRecorder/Resources/Info.plist').write_bytes(plistlib.dumps(info, sort_keys=False))
 privacy = {'NSPrivacyTracking': False, 'NSPrivacyTrackingDomains': [], 'NSPrivacyCollectedDataTypes': [], 'NSPrivacyAccessedAPITypes': [{'NSPrivacyAccessedAPIType': 'NSPrivacyAccessedAPICategoryFileTimestamp', 'NSPrivacyAccessedAPITypeReasons': ['C617.1']}]}
 (ROOT / 'AikinRecorder/Resources/PrivacyInfo.xcprivacy').write_bytes(plistlib.dumps(privacy))

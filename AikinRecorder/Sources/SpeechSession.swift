@@ -6,9 +6,10 @@ final class SpeechSession {
     private var analyzer: SpeechAnalyzer?
     private var resultsTask: Task<Void, Never>?
     private var continuation: AsyncStream<AnalyzerInput>.Continuation?
-    private var stableText = ""
+    private var lines: [TranscriptLine] = []
     private var resultError: Error?
-    var onText: ((String) -> Void)?
+    var clock: (() -> TimeInterval)?
+    var onLines: (([TranscriptLine]) -> Void)?
     var onStatus: ((String) -> Void)?
 
     private func prepare(localeID: String) async throws -> SpeechTranscriber {
@@ -23,20 +24,17 @@ final class SpeechSession {
             try await request.downloadAndInstall()
         }
         try Task.checkCancellation()
-        stableText = ""
+        lines = []
         resultError = nil
         analyzer = SpeechAnalyzer(modules: [transcriber])
         resultsTask = Task { [weak self] in
             do {
                 for try await result in transcriber.results {
                     guard let self else { return }
-                    let text = String(result.text.characters)
-                    if result.isFinal {
-                        self.stableText += text
-                        self.onText?(self.stableText)
-                    } else {
-                        self.onText?(self.stableText + text)
-                    }
+                    let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { continue }
+                    self.apply(text: text, provisional: !result.isFinal)
+                    self.onLines?(self.lines)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -81,6 +79,17 @@ final class SpeechSession {
         self.analyzer = nil
         resultsTask = nil
         onStatus?("转写完成")
+    }
+
+    private func apply(text: String, provisional: Bool) {
+        if let index = lines.indices.last, lines[index].provisional {
+            if provisional {
+                lines[index].text = text
+                return
+            }
+            lines.remove(at: index)
+        }
+        lines.append(TranscriptLine(time: clock?() ?? 0, text: text, provisional: provisional))
     }
 
     func cancel() async {

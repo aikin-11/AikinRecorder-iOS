@@ -8,7 +8,7 @@ final class RecorderModel {
     enum State { case idle, preparing, recording, paused, saving, saved }
     private(set) var state: State = .idle
     var title = Recording.meetingTitle()
-    var transcript = ""
+    var lines: [TranscriptLine] = []
     var status = "点击下方按钮开始录音"
     var errorMessage: String?
     var elapsed: TimeInterval = 0
@@ -24,6 +24,11 @@ final class RecorderModel {
     private var elapsedBeforePause: TimeInterval = 0
     private var interruptionObserver: NSObjectProtocol?
     private var hasTap = false
+    private var lastActivityUpdate: Date?
+
+    var transcript: String {
+        lines.filter { !$0.provisional }.map(\.text).joined(separator: "\n")
+    }
 
     var hasUnsavedRecording: Bool { state == .recording || state == .paused || state == .saving }
 
@@ -44,8 +49,16 @@ final class RecorderModel {
             var builder: AsyncStream<AnalyzerInput>.Continuation?
             if liveTranscription {
                 let service = SpeechSession()
-                service.onText = { [weak self] in self?.transcript = $0 }
-                service.onStatus = { [weak self] in self?.status = $0 }
+                service.clock = { [weak self] in self?.elapsed ?? 0 }
+                service.onLines = { [weak self] lines in
+                    Task { @MainActor in
+                        self?.lines = lines
+                        self?.pushActivity(force: true)
+                    }
+                }
+                service.onStatus = { [weak self] message in
+                    Task { @MainActor in self?.status = message }
+                }
                 do {
                     let prepared = try await service.startLive(localeID: localeID)
                     format = prepared.0
@@ -80,11 +93,13 @@ final class RecorderModel {
             state = .recording
             startTime = .now
             UIApplication.shared.isIdleTimerDisabled = true
+            RecordingActivity.start(title: Recording.cleanTitle(title), elapsed: 0)
             timer = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(150))
                     guard let self else { return }
                     if self.state == .recording, let start = self.startTime { self.elapsed = self.elapsedBeforePause + Date().timeIntervalSince(start) }
+                    self.pushActivity(force: false)
                 }
             }
             interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification,
@@ -119,10 +134,12 @@ final class RecorderModel {
                 elapsedBeforePause = elapsed
                 startTime = nil
                 state = .paused
+                pushActivity(force: true)
             } else if state == .paused {
                 try engine.start()
                 startTime = .now
                 state = .recording
+                pushActivity(force: true)
             }
         } catch { errorMessage = error.localizedDescription }
     }
@@ -150,9 +167,19 @@ final class RecorderModel {
             do { try store.update(item); status = "录音已保存" }
             catch { errorMessage = "音频已保留，但文件信息保存失败：\(error.localizedDescription)" }
         }
+        RecordingActivity.end()
         UIApplication.shared.isIdleTimerDisabled = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         state = .saved
+    }
+
+    private func pushActivity(force: Bool) {
+        guard state == .recording || state == .paused else { return }
+        let now = Date()
+        if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 1 { return }
+        lastActivityUpdate = now
+        let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
+        RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)))
     }
 
     private func appendLevel(_ value: Float) {

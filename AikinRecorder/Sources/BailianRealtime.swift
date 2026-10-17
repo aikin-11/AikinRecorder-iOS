@@ -126,6 +126,15 @@ final class BailianRealtime: @unchecked Sendable {
     }
 }
 
+final class BailianPCMSink: @unchecked Sendable {
+    let downsampler: PCMDownsampler
+    let service: BailianRealtime
+    init(downsampler: PCMDownsampler, service: BailianRealtime) {
+        self.downsampler = downsampler
+        self.service = service
+    }
+}
+
 final class PCMDownsampler: @unchecked Sendable {
     private var cursor: Double = 0
     func convert(_ samples: UnsafePointer<Float>, count: Int, sampleRate: Double) -> Data {

@@ -95,12 +95,14 @@ final class RecorderModel {
             let input = engine.inputNode
             let inputFormat = input.outputFormat(forBus: 0)
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw RecorderError.message("麦克风当前不可用，请检查音频设备。") }
+            let pcmSink = bailian.map { BailianPCMSink(downsampler: downsampler, service: $0) }
             let pipeline = try AudioCapture(url: store.audioURL(for: draft), inputFormat: inputFormat,
                 analyzerFormat: format, continuation: builder,
                 onLevel: { [levelMeter] value in levelMeter.set(value) },
-                onPCM: bailian == nil ? nil : { [downsampler, weak bailian] samples, count, rate in
-                    let pcm = downsampler.convert(samples, count: count, sampleRate: rate)
-                    bailian?.appendPCM(pcm)
+                onPCM: pcmSink.map { sink in
+                    { samples, count, rate in
+                        sink.service.appendPCM(sink.downsampler.convert(samples, count: count, sampleRate: rate))
+                    }
                 },
                 onFailure: { [weak self, weak store] message in Task { @MainActor in
                     self?.errorMessage = "音频写入失败：\(message)"

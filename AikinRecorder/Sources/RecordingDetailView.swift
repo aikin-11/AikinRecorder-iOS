@@ -42,7 +42,7 @@ struct RecordingDetailView: View {
                             ForEach(item.lines) { line in
                                 HStack(alignment: .top, spacing: 12) {
                                     HStack(spacing: 2) {
-                                        Text(Recording.timeText(line.time))
+                                        Text(Recording.timeText(alignedTime(line)))
                                         if item.marks.contains(where: { abs($0.time - line.time) < 1.2 }) {
                                             Image(systemName: "bookmark.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                                         }
@@ -56,7 +56,7 @@ struct RecordingDetailView: View {
                                         .padding(8)
                                         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(activeLineID == line.id ? Color.white : Color.clear, lineWidth: 1.4))
                                         .contentShape(Rectangle())
-                                        .onTapGesture { player.play(from: line.time) }
+                                        .onTapGesture { player.play(from: alignedTime(line)) }
                                 }
                                 .id(line.id)
                             }
@@ -180,8 +180,28 @@ struct RecordingDetailView: View {
     }
 
     private var activeLineID: UUID? {
-        let sorted = item.lines.sorted { $0.time < $1.time }
-        return sorted.last { $0.time <= player.position + 0.2 }?.id ?? sorted.first?.id
+        let sorted = item.lines.sorted { alignedTime($0) < alignedTime($1) }
+        return sorted.last { alignedTime($0) <= player.position + 0.2 }?.id ?? sorted.first?.id
+    }
+
+    private var storedTimesUsable: Bool {
+        let duration = max(item.duration, player.duration)
+        guard duration > 1, item.lines.count > 1 else { return item.lines.allSatisfy { $0.time >= 0 } }
+        let times = item.lines.map(\.time).sorted()
+        guard let first = times.first, let last = times.last else { return false }
+        return first < duration * 0.2 && last > duration * 0.45 && last <= duration * 1.05 && last - first > duration * 0.35
+    }
+
+    private func alignedTime(_ line: TranscriptCue) -> TimeInterval {
+        if storedTimesUsable { return line.time }
+        let duration = max(item.duration, player.duration, 0.01)
+        let total = max(1, item.lines.reduce(0) { $0 + $1.text.count })
+        var before = 0
+        for cue in item.lines {
+            if cue.id == line.id { break }
+            before += cue.text.count
+        }
+        return duration * Double(before) / Double(total)
     }
 
     private func highlighted(_ text: String) -> AttributedString {

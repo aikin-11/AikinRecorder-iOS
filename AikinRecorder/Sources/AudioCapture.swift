@@ -6,8 +6,9 @@ final class AudioCapture: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.aikin.recorder.capture", qos: .userInitiated)
     private var file: AVAudioFile?
     private var converter: AVAudioConverter?
-    private let analyzerFormat: AVAudioFormat?
-    private let continuation: AsyncStream<AnalyzerInput>.Continuation?
+    private var analyzerFormat: AVAudioFormat?
+    private var continuation: AsyncStream<AnalyzerInput>.Continuation?
+    private var inputFormat: AVAudioFormat?
     private let onLevel: @Sendable (Float) -> Void
     private let onPCM: (@Sendable (UnsafePointer<Float>, Int, Double) -> Void)?
     private let onFailure: @Sendable (String) -> Void
@@ -20,6 +21,7 @@ final class AudioCapture: @unchecked Sendable {
          onFailure: @escaping @Sendable (String) -> Void) throws {
         self.analyzerFormat = analyzerFormat
         self.continuation = continuation
+        self.inputFormat = inputFormat
         self.onLevel = onLevel
         self.onPCM = onPCM
         self.onFailure = onFailure
@@ -32,6 +34,14 @@ final class AudioCapture: @unchecked Sendable {
         if let analyzerFormat {
             converter = AVAudioConverter(from: inputFormat, to: analyzerFormat)
             guard converter != nil else { throw RecorderError.message("无法转换麦克风音频格式。") }
+        }
+    }
+
+    func attachAnalyzer(format: AVAudioFormat, continuation: AsyncStream<AnalyzerInput>.Continuation) {
+        queue.async { [self] in
+            analyzerFormat = format
+            self.continuation = continuation
+            if let inputFormat { converter = AVAudioConverter(from: inputFormat, to: format) }
         }
     }
 

@@ -19,7 +19,14 @@ struct LibraryView: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                if items.isEmpty {
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        statCard("录音", value: "\(store.recordings.count) 条")
+                        statCard("转写字数", value: "\(store.recordings.reduce(0) { $0 + $1.transcript.count })")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    if items.isEmpty {
                     VStack(spacing: 10) {
                         Text(query.isEmpty ? "还没有录音" : "没有找到文件").font(.headline)
                         Text(query.isEmpty ? "录制一场会议，或从文件导入音频。" : "试试其他关键词。")
@@ -42,6 +49,7 @@ struct LibraryView: View {
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
+                    }
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -63,7 +71,7 @@ struct LibraryView: View {
                 HStack(spacing: 10) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("搜索转写内容", text: $query)
+                        TextField("输入标题或内容", text: $query)
                             .textInputAutocapitalization(.never)
                     }
                     .padding(.horizontal, 12)
@@ -103,6 +111,16 @@ struct LibraryView: View {
         }
     }
 
+    private func statCard(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.title3.weight(.semibold)).foregroundStyle(.white)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+    }
+
     private func importAudio() {
         SystemPresenter.pickAudio { urls in
             Task {
@@ -133,7 +151,7 @@ private struct RecordingRow: View {
                     Text("·")
                     Text(Recording.timeText(item.duration)).monospacedDigit()
                     if !item.summary.isEmpty { Text("· AI处理完毕") }
-                    else if !item.transcript.isEmpty { Text("· 已转写") }
+                    else if !item.transcript.isEmpty { Text("· 已转写 \(item.transcript.count)字") }
                 }.font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)

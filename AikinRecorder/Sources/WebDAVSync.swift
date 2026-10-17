@@ -94,12 +94,13 @@ enum WebDAVSync {
             guard !key.isEmpty, key != parent else { continue }
             let child = key.hasPrefix(parent + "/") || !key.contains("/") || key.hasSuffix("/" + (parent.split(separator: "/").last.map(String.init) ?? parent))
             guard parent.isEmpty || child || key.contains(parent) else { continue }
+            let full = key.hasPrefix(parent) ? "/" + key : WebDAVSettings.remotePath + "/" + (key.split(separator: "/").last.map(String.init) ?? key)
             if entry.isCollection {
-                let children = (try? parseResponses(await request(method: "PROPFIND", path: "/" + key, body: propfindBody, depth: "1"))) ?? []
+                let children = (try? parseResponses(await request(method: "PROPFIND", path: full, body: propfindBody, depth: "1"))) ?? []
                 let bytes = children.filter { !$0.isCollection }.reduce(Int64(0)) { $0 + $1.bytes }
-                result.append(WebDAVBackup(path: "/" + key, name: key.split(separator: "/").last.map(String.init) ?? key, bytes: bytes))
+                result.append(WebDAVBackup(path: full, name: key.split(separator: "/").last.map(String.init) ?? key, bytes: bytes))
             } else {
-                result.append(WebDAVBackup(path: "/" + key, name: key.split(separator: "/").last.map(String.init) ?? key, bytes: entry.bytes))
+                result.append(WebDAVBackup(path: full, name: key.split(separator: "/").last.map(String.init) ?? key, bytes: entry.bytes))
             }
         }
         return result
@@ -107,7 +108,7 @@ enum WebDAVSync {
 
     static func deleteBackups(_ paths: [String]) async throws {
         for path in paths {
-            _ = try await request(method: "DELETE", path: path, body: nil, depth: "infinity")
+            _ = try await request(method: "DELETE", path: path, body: nil, depth: nil)
         }
     }
 

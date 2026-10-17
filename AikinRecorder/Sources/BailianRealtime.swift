@@ -134,7 +134,13 @@ final class BailianRealtime: @unchecked Sendable {
             let finished = (sentence["sentence_end"] as? Bool) == true
             onText?(spoken, finished)
         case "task-failed":
-            onStatus?("百炼转写失败：\(header["error_message"] as? String ?? "未知错误")")
+            let reason = header["error_message"] as? String ?? "未知错误"
+            let lowered = reason.lowercased()
+            if lowered.contains("token") || lowered.contains("quota") || lowered.contains("arrear") || lowered.contains("balance") || reason.contains("额度") || reason.contains("不足") || reason.contains("余额") {
+                onStatus?("额度不足")
+            } else {
+                onStatus?("百炼转写失败：\(reason)")
+            }
         default:
             break
         }

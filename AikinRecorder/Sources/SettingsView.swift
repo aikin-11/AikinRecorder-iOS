@@ -30,6 +30,7 @@ struct SettingsView: View {
                                             .font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
+                                .tint(.green)
                             }
                             Button("清理所选录音", role: .destructive) { confirmingCleanup = true }
                                 .disabled(selected.isEmpty)
@@ -250,6 +251,7 @@ private struct BackupListView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                .tint(.green)
             }
             Button("删除所选备份", role: .destructive) { remove() }
                 .disabled(selected.isEmpty || loading)

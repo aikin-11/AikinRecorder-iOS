@@ -61,7 +61,11 @@ final class RecorderModel {
                     Task { @MainActor in self?.applyBailian(text, finished: finished) }
                 }
                 service.onStatus = { [weak self] message in
-                    Task { @MainActor in self?.status = message }
+                    Task { @MainActor in
+                        guard let self else { return }
+                        if message == "额度不足" { await self.switchToApple() }
+                        else { self.status = message }
+                    }
                 }
                 try await service.start()
                 bailian = service
@@ -216,6 +220,32 @@ final class RecorderModel {
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
         let captions = lines.suffix(4).map { String($0.text.prefix(40)) }
         RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)), captions: captions.isEmpty ? [String(snippet.prefix(40))] : captions, levels: activityLevels, markedUntil: markFlashUntil)
+    }
+
+    private func switchToApple() async {
+        guard speech == nil else { return }
+        transcriptionEngine = "local"
+        status = "阿里云额度不足，已改用 Apple 模型"
+        await bailian?.finish()
+        bailian = nil
+        let service = SpeechSession()
+        service.clock = { [weak self] in self?.elapsed ?? 0 }
+        service.onLines = { [weak self] lines in
+            Task { @MainActor in
+                self?.lines = lines
+                self?.pushActivity(force: true)
+            }
+        }
+        service.onStatus = { [weak self] message in
+            Task { @MainActor in self?.status = message }
+        }
+        do {
+            let prepared = try await service.startLive(localeID: localeID)
+            speech = service
+            capture?.attachAnalyzer(format: prepared.0, continuation: prepared.1)
+        } catch {
+            status = "已停止阿里云转写，Apple 模型暂不可用"
+        }
     }
 
     private func applyBailian(_ text: String, finished: Bool) {

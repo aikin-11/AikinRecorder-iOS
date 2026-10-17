@@ -61,10 +61,8 @@ final class LibraryStore {
         let id = UUID()
         let fileName = "\(id.uuidString).\(ext)"
         let target = directory.appendingPathComponent(fileName)
-        try await Task.detached(priority: .userInitiated) {
-            if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
-            try FileManager.default.copyItem(at: source, to: target)
-        }.value
+        if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+        try FileManager.default.copyItem(at: source, to: target)
         let item = Recording(id: id, title: Recording.cleanTitle(source.deletingPathExtension().lastPathComponent),
                              fileName: fileName, createdAt: .now, duration: duration.isFinite ? duration : 0, transcript: "")
         recordings.insert(item, at: 0)

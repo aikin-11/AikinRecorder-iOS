@@ -12,10 +12,11 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    NavigationLink("ChatGPT") { ChatGPTSettingsView() }
                     NavigationLink("DeepSeek") { DeepSeekSettingsView() }
                     NavigationLink("阿里云百炼") { BailianSettingsView() }
                 } header: { Text("模型服务") } footer: {
-                    Text("点进去填写密钥。密钥只保存在这台手机。")
+                    Text("ChatGPT 用登录使用套餐，不填 API Key。DeepSeek 和百炼仍用密钥，只保存在这台手机。")
                 }
                 Section {
                     NavigationLink("我的记忆") { MeetingMemoryView() }

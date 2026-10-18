@@ -77,9 +77,11 @@ struct RecordingLiveActivity: Widget {
             }
             }
         }
+        .foregroundStyle(.white)
         .frame(height: 96)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+        .activityBackgroundTint(Color.white.opacity(0.18))
         .activitySystemActionForegroundColor(.white)
     }
 }

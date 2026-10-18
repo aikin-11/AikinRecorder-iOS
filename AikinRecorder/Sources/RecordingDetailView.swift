@@ -295,7 +295,7 @@ struct RecordingDetailView: View {
         Task {
             defer { summarizing = false }
             do {
-                item.summary = try await DeepSeekClient.summarize(transcript: transcript) { value in
+                item.summary = try await MeetingAI.summarize(transcript: transcript) { value in
                     Task { @MainActor in summaryProgress = value }
                 }
                 summaryProgress = 1

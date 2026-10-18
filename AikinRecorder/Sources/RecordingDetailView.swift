@@ -126,6 +126,7 @@ struct RecordingDetailView: View {
         }
         .padding(.bottom, 12).background(Color.black)
         .navigationTitle(item.title).navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {

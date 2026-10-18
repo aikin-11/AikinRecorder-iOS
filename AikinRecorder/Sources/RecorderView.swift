@@ -15,19 +15,6 @@ struct RecorderView: View {
         NavigationStack {
             VStack(spacing: 12) {
                 HStack {
-                    Button(model.state == .saved ? "完成" : "关闭") {
-                        if model.hasUnsavedRecording { confirmingClose = true }
-                        else { preparingTask?.cancel(); dismiss() }
-                    }
-                    .buttonStyle(.glass)
-                    .disabled(model.state == .saving)
-                    Spacer()
-                    Text("录音实时转写").font(.headline)
-                    Spacer()
-                    Color.clear.frame(width: 44, height: 1)
-                }
-                .padding(.horizontal)
-                HStack {
                     Text(Recording.timeText(model.elapsed)).font(.title2.monospacedDigit())
                     Spacer()
                     Text("\(Recording.countText(model.lines.reduce(0) { $0 + $1.text.count })) 字").font(.subheadline.monospacedDigit())
@@ -79,7 +66,17 @@ struct RecorderView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Color.black)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("录音实时转写")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(model.state == .saved ? "完成" : "关闭") {
+                        if model.hasUnsavedRecording { confirmingClose = true }
+                        else { preparingTask?.cancel(); dismiss() }
+                    }
+                    .disabled(model.state == .saving)
+                }
+            }
             .interactiveDismissDisabled(model.hasUnsavedRecording || model.state == .preparing)
             .confirmationDialog("保存录音后退出？", isPresented: $confirmingClose, titleVisibility: .visible) {
                 Button("保存并退出") { Task { await model.finish(in: store); dismiss() } }

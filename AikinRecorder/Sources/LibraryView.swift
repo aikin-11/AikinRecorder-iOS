@@ -54,7 +54,7 @@ struct LibraryView: View {
                     }
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .toolbar(selectedItem == nil ? .hidden : .visible, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
                 HStack {
                     Text("AikinRec")

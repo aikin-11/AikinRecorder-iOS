@@ -220,10 +220,11 @@ enum ChatGPTClient {
         guard ChatGPTAccount.canUsePlan else { throw RecorderError.message("请先在设置中登录 ChatGPT，并允许使用套餐。") }
         let token = try await ChatGPTAccount.accessToken()
         let model = try await modelSlug(token: token)
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
+        var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/codex/responses")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("AikinRec", forHTTPHeaderField: "originator")
         if let account = ChatGPTAccount.accountID() { request.setValue(account, forHTTPHeaderField: "ChatGPT-Account-Id") }
         let body: [String: Any] = ["model": model, "instructions": instructions, "input": [["role": "user", "content": input]], "store": false, "stream": true]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -253,18 +254,22 @@ enum ChatGPTClient {
 
     private static func modelSlug(token: String) async throws -> String {
         if let saved = UserDefaults.standard.string(forKey: "chatgpt.model"), !saved.isEmpty { return saved }
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!)
+        var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/codex/models?client_version=0.98.0")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("AikinRec", forHTTPHeaderField: "originator")
+        if let account = ChatGPTAccount.accountID() { request.setValue(account, forHTTPHeaderField: "ChatGPT-Account-Id") }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw RecorderError.message("无法读取 ChatGPT 可用模型。")
         }
         let models = (json["models"] as? [[String: Any]]) ?? (json["data"] as? [[String: Any]]) ?? []
-        let slug = models.first {
-            ($0["visibility"] as? String) == "list" || $0["visibility"] == nil
-        }.flatMap { ($0["slug"] as? String) ?? ($0["id"] as? String) }
-        guard let slug, !slug.isEmpty else { throw RecorderError.message("这个 ChatGPT 账号没有可用模型。") }
+        let visible = models.filter {
+            let visibility = ($0["visibility"] as? String)?.lowercased() ?? "list"
+            return visibility != "hide" && visibility != "hidden"
+        }
+        let slug = (visible.isEmpty ? models : visible).compactMap { ($0["slug"] as? String) ?? ($0["id"] as? String) }.first { !$0.isEmpty }
+        guard let slug else { throw RecorderError.message("这个 ChatGPT 账号没有可用模型。") }
         UserDefaults.standard.set(slug, forKey: "chatgpt.model")
         return slug
     }

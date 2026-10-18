@@ -247,6 +247,7 @@ private struct LongPressDeleteRow<Content: View>: View {
     let onOpen: () -> Void
     @ViewBuilder var content: () -> Content
     @State private var suppressTap = false
+    @State private var anchor = CGPoint(x: 180, y: 320)
 
     var body: some View {
         Button {
@@ -255,55 +256,17 @@ private struct LongPressDeleteRow<Content: View>: View {
         } label: { content() }
             .buttonStyle(.plain)
             .background {
-                PressPointReader { point in
-                    suppressTap = true
-                    onDelete(point)
+                GeometryReader { geo in
+                    Color.clear
+                        .onChange(of: geo.frame(in: .global), initial: true) { _, frame in
+                            anchor = CGPoint(x: frame.midX, y: frame.minY + 28)
+                        }
                 }
             }
-    }
-}
-
-private struct PressPointReader: UIViewRepresentable {
-    var onPress: (CGPoint) -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator(onPress: onPress) }
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .clear
-        view.isUserInteractionEnabled = false
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        context.coordinator.onPress = onPress
-        DispatchQueue.main.async {
-            guard let host = uiView.superview, context.coordinator.attached !== host else { return }
-            context.coordinator.attached?.removeGestureRecognizer(context.coordinator.press)
-            host.addGestureRecognizer(context.coordinator.press)
-            context.coordinator.attached = host
-        }
-    }
-
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        var onPress: (CGPoint) -> Void
-        weak var attached: UIView?
-        let press: UILongPressGestureRecognizer
-        init(onPress: @escaping (CGPoint) -> Void) {
-            self.onPress = onPress
-            press = UILongPressGestureRecognizer()
-            super.init()
-            press.minimumPressDuration = 0.45
-            press.cancelsTouchesInView = false
-            press.delegate = self
-            press.addTarget(self, action: #selector(pressed(_:)))
-        }
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
-        @objc func pressed(_ gesture: UILongPressGestureRecognizer) {
-            guard gesture.state == .began, let view = gesture.view else { return }
-            let point = gesture.location(in: view.window)
-            onPress(point)
-        }
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                suppressTap = true
+                onDelete(anchor)
+            })
     }
 }
 

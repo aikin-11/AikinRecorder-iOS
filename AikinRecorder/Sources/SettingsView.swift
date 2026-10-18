@@ -46,9 +46,10 @@ struct SettingsView: View {
                         LabeledContent("已用空间", value: ByteCountFormatter.string(fromByteCount: usage, countStyle: .file))
                     }
                 } header: { Text("录音空间") } footer: {
-                    Text("点进去查看每条录音的大小。清理会删除所选录音、转写和总结，且不能恢复。")
+                    Text("点进去查看每条录音的大小。清理会把所选录音、转写和总结放进回收站。")
                 }
                 Section {
+                    NavigationLink("回收站") { TrashView() }
                     NavigationLink("WebDAV") { WebDAVSettingsView() }
                 } header: { Text("备份") } footer: {
                     Text("点进去填写服务器、账号和保存位置。")

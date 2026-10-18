@@ -5,6 +5,12 @@ import Observation
 import UIKit
 import UniformTypeIdentifiers
 
+struct TrashedRecording: Codable, Identifiable, Hashable {
+    var id: UUID { recording.id }
+    var recording: Recording
+    var deletedAt: Date
+}
+
 @MainActor @Observable
 final class LibraryStore {
     private(set) var recordings: [Recording] = []
@@ -16,6 +22,7 @@ final class LibraryStore {
     var transcriptPaused = false
     var transcriptTick = 0
     private(set) var todos: [TodoItem] = []
+    private(set) var trash: [TrashedRecording] = []
     let directory: URL
     private var speech: SpeechSession?
     private var transcriptionTask: Task<Void, Never>?
@@ -36,12 +43,27 @@ final class LibraryStore {
             if FileManager.default.fileExists(atPath: indexURL.path) {
                 recordings = try JSONDecoder().decode([Recording].self, from: Data(contentsOf: indexURL))
             }
-            recoverUnindexedAudio()
             loadTodos()
+            loadTrash()
+            recoverUnindexedAudio()
         } catch { errorMessage = "文件库读取失败：\(error.localizedDescription)" }
     }
 
     private var todosURL: URL { directory.appendingPathComponent("todos.json") }
+    private var trashURL: URL { directory.appendingPathComponent("trash.json") }
+    private var trashDirectory: URL { directory.appendingPathComponent("Trash", isDirectory: true) }
+
+    private func loadTrash() {
+        guard FileManager.default.fileExists(atPath: trashURL.path),
+              let data = try? Data(contentsOf: trashURL),
+              let saved = try? JSONDecoder().decode([TrashedRecording].self, from: data) else { return }
+        trash = saved
+    }
+
+    private func saveTrash() {
+        guard let data = try? JSONEncoder().encode(trash) else { return }
+        try? data.write(to: trashURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
 
     private func loadTodos() {
         guard FileManager.default.fileExists(atPath: todosURL.path),
@@ -53,6 +75,14 @@ final class LibraryStore {
     private func saveTodos() {
         guard let data = try? JSONEncoder().encode(todos) else { return }
         try? data.write(to: todosURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    func addTodos(_ titles: [String], recordingID: UUID) {
+        let existing = Set(todos.filter { $0.recordingID == recordingID }.map(\.title))
+        for title in titles where !existing.contains(title) {
+            todos.append(TodoItem(id: UUID(), title: title, done: false, recordingID: recordingID, createdAt: .now))
+        }
+        saveTodos()
     }
 
     func importTodos(from summary: String, recordingID: UUID) {
@@ -101,13 +131,44 @@ final class LibraryStore {
         do { try persist() } catch { recordings[index] = previous; throw error }
     }
 
-    func remove(_ recording: Recording) throws {
-        // Persist the index first. A failed file deletion is recoverable on next launch.
+    func remove(_ recording: Recording) throws { try trash(recording) }
+
+    func trash(_ recording: Recording) throws {
         let previous = recordings
         recordings.removeAll { $0.id == recording.id }
         do { try persist() } catch { recordings = previous; throw error }
         let url = audioURL(for: recording)
-        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
+            let target = trashDirectory.appendingPathComponent(recording.fileName)
+            if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+            try FileManager.default.moveItem(at: url, to: target)
+        }
+        trash.removeAll { $0.recording.id == recording.id }
+        trash.insert(TrashedRecording(recording: recording, deletedAt: .now), at: 0)
+        saveTrash()
+    }
+
+    func restoreTrash(_ item: TrashedRecording) throws {
+        let source = trashDirectory.appendingPathComponent(item.recording.fileName)
+        let target = directory.appendingPathComponent(item.recording.fileName)
+        if FileManager.default.fileExists(atPath: source.path) {
+            if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+            try FileManager.default.moveItem(at: source, to: target)
+        }
+        trash.removeAll { $0.recording.id == item.recording.id }
+        saveTrash()
+        if !recordings.contains(where: { $0.id == item.recording.id }) {
+            recordings.insert(item.recording, at: 0)
+            try persist()
+        }
+    }
+
+    func deleteTrash(_ item: TrashedRecording) {
+        trash.removeAll { $0.recording.id == item.recording.id }
+        saveTrash()
+        let url = trashDirectory.appendingPathComponent(item.recording.fileName)
+        if FileManager.default.fileExists(atPath: url.path) { try? FileManager.default.removeItem(at: url) }
     }
 
     func importAudio(from source: URL) async throws -> Recording {
@@ -195,15 +256,16 @@ final class LibraryStore {
     }
 
     private func recoverUnindexedAudio() {
-        // A crash cannot make a completed audio file disappear from the library.
-        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.creationDateKey]) else { return }
-        let known = Set(recordings.map(\.fileName))
-        for file in files where !known.contains(file.lastPathComponent) && ["m4a", "caf", "wav", "mp3", "aac", "aiff"].contains(file.pathExtension.lowercased()) {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.creationDateKey, .isDirectoryKey]) else { return }
+        let known = Set(recordings.map(\.fileName)).union(trash.map(\.recording.fileName))
+        let audio = ["m4a", "caf", "wav", "mp3", "aac", "aiff"]
+        for file in files {
+            let directory = (try? file.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            guard !directory, !known.contains(file.lastPathComponent), audio.contains(file.pathExtension.lowercased()) else { continue }
             let date = (try? file.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .now
-            recordings.append(Recording(id: UUID(), title: "恢复的录音_\(Recording.meetingTitle(at: date))", fileName: file.lastPathComponent, createdAt: date, duration: 0, transcript: ""))
+            let recording = Recording(id: UUID(), title: "未编入列表的录音", fileName: file.lastPathComponent, createdAt: date, duration: 0, transcript: "")
+            do { try trash(recording) } catch { continue }
         }
-        recordings.sort { $0.createdAt > $1.createdAt }
-        try? persist()
     }
 
     func beginTranscription(_ recording: Recording, from start: TimeInterval) {

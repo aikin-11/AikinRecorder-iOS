@@ -182,7 +182,7 @@ struct RecordingDetailView: View {
         .sheet(isPresented: $showingSummary, onDismiss: {
             if titleReady { titleReady = false; offeringTitle = true }
         }) {
-            SummarySheet(deepSeek: item.summaryText(chatgpt: false), chatGPT: item.summaryText(chatgpt: true), progress: summaryProgress, working: summarizing, engine: $summaryEngine, regenerate: { summarize() }) {
+            SummarySheet(recordingID: item.id, deepSeek: item.summaryText(chatgpt: false), chatGPT: item.summaryText(chatgpt: true), progress: summaryProgress, working: summarizing, engine: $summaryEngine, regenerate: { summarize() }) {
                 do { SystemPresenter.share(try store.shareSummary(item, text: item.summaryText(chatgpt: summaryEngine == .chatgpt))) }
                 catch { errorMessage = error.localizedDescription }
             }
@@ -300,7 +300,6 @@ struct RecordingDetailView: View {
                 item.storeSummary(text, chatgpt: summaryEngine == .chatgpt)
                 summaryProgress = 1
                 save()
-                store.importTodos(from: text, recordingID: item.id)
                 let theme = DeepSeekClient.theme(from: text)
                 if !theme.isEmpty, theme != item.title {
                     suggestedTitle = theme
@@ -341,6 +340,7 @@ struct RecordingDetailView: View {
 }
 
 private struct SummarySheet: View {
+    let recordingID: UUID
     let deepSeek: String
     let chatGPT: String
     let progress: Double
@@ -349,6 +349,8 @@ private struct SummarySheet: View {
     let regenerate: () -> Void
     let export: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(LibraryStore.self) private var store
+    @State private var pickingTodos = false
 
     private var summary: String { engine == .chatgpt ? chatGPT : deepSeek }
 
@@ -373,13 +375,22 @@ private struct SummarySheet: View {
                         .padding(.bottom, 64)
                 }
             }
-            .overlay(alignment: .bottomTrailing) {
-                Button(summary.isEmpty ? "生成总结" : "重新总结", action: regenerate)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.yellow)
-                    .foregroundStyle(.black)
-                    .disabled(working)
-                    .padding(16)
+            .overlay(alignment: .bottom) {
+                HStack {
+                    Button("提取待办") { pickingTodos = true }
+                        .buttonStyle(.bordered)
+                        .disabled(summary.isEmpty || working)
+                    Spacer()
+                    Button(summary.isEmpty ? "生成总结" : "重新总结", action: regenerate)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.yellow)
+                        .foregroundStyle(.black)
+                        .disabled(working)
+                }
+                .padding(16)
+            }
+            .sheet(isPresented: $pickingTodos) {
+                TodoPickView(recordingID: recordingID, titles: TodoParser.titles(in: summary))
             }
             .navigationTitle("会议总结")
             .navigationBarTitleDisplayMode(.inline)

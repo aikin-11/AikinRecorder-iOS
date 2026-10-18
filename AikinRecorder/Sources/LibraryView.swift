@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct LibraryView: View {
@@ -27,15 +27,15 @@ struct LibraryView: View {
                 Color.black.ignoresSafeArea()
                 VStack(spacing: 12) {
                     HStack(spacing: 12) {
-                        statCard("褰曢煶", value: "\(store.recordings.count) 鏉?)
-                        statCard("杞啓瀛楁暟", value: Recording.countText(store.recordings.reduce(0) { $0 + $1.transcript.count }))
+                        statCard("录音", value: "\(store.recordings.count) 条")
+                        statCard("转写字数", value: Recording.countText(store.recordings.reduce(0) { $0 + $1.transcript.count }))
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                     if items.isEmpty {
                     VStack(spacing: 10) {
-                        Text(query.isEmpty ? "杩樻病鏈夊綍闊? : "娌℃湁鎵惧埌鏂囦欢").font(.headline)
-                        Text(query.isEmpty ? "褰曞埗涓€鍦轰細璁紝鎴栦粠鏂囦欢瀵煎叆闊抽銆? : "璇曡瘯鍏朵粬鍏抽敭璇嶃€?)
+                        Text(query.isEmpty ? "还没有录音" : "没有找到文件").font(.headline)
+                        Text(query.isEmpty ? "录制一场会议，或从文件导入音频。" : "试试其他关键词。")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }.padding()
                 } else {
@@ -69,7 +69,7 @@ struct LibraryView: View {
                     .buttonStyle(.plain)
                     .frame(width: 44, height: 44)
                     .glassEffect(.regular.interactive(), in: .circle)
-                    .accessibilityLabel("璁剧疆")
+                    .accessibilityLabel("设置")
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
@@ -84,8 +84,8 @@ struct LibraryView: View {
                                 .foregroundStyle(askMode ? Color.yellow : Color.secondary)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(askMode ? "鍏抽棴 DeepSeek 鎻愰棶" : "鐢?DeepSeek 鎻愰棶")
-                        TextField(askMode ? "鍚?DeepSeek 鎻愰棶" : "杈撳叆鏍囬鎴栧唴瀹?, text: $query)
+                        .accessibilityLabel(askMode ? "关闭 DeepSeek 提问" : "用 DeepSeek 提问")
+                        TextField(askMode ? "向 DeepSeek 提问" : "输入标题或内容", text: $query)
                             .textInputAutocapitalization(.never)
                             .onSubmit { if askMode { askDeepSeek() } }
                     }
@@ -93,8 +93,8 @@ struct LibraryView: View {
                     .frame(height: 44)
                     .glassEffect(.regular, in: .capsule)
                     Menu {
-                        Button("褰曢煶瀹炴椂杞啓", systemImage: "mic") { showingRecorder = true }
-                        Button("瀵煎叆澶栭儴闊抽", systemImage: "square.and.arrow.down") { importAudio() }
+                        Button("录音实时转写", systemImage: "mic") { showingRecorder = true }
+                        Button("导入外部音频", systemImage: "square.and.arrow.down") { importAudio() }
                     } label: {
                         Image(systemName: "plus")
                             .font(.body.weight(.semibold))
@@ -104,7 +104,7 @@ struct LibraryView: View {
                     .frame(width: 44, height: 44)
                     .glassEffect(.regular.interactive(), in: .circle)
                     .disabled(importing)
-                    .accessibilityLabel("鏂板缓")
+                    .accessibilityLabel("新建")
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -113,9 +113,9 @@ struct LibraryView: View {
             }
             .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item, initialQuery: query) }
             .sheet(isPresented: $showingRecorder) { RecorderView() }
-            .overlay { if importing { ProgressView("姝ｅ湪瀵煎叆鈥?).padding(24).glassEffect(in: .rect(cornerRadius: 20)) } }
-            .confirmationDialog("纭畾瑕佸垹闄ゅ悧锛?, isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }), titleVisibility: .visible) {
-                Button("鍒犻櫎褰曢煶", role: .destructive) {
+            .overlay { if importing { ProgressView("正在导入…").padding(24).glassEffect(in: .rect(cornerRadius: 20)) } }
+            .confirmationDialog("确定要删除吗？", isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }), titleVisibility: .visible) {
+                Button("删除录音", role: .destructive) {
                     if let item = itemToDelete { do { try store.remove(item) } catch { errorMessage = error.localizedDescription } }
                     itemToDelete = nil
                 }
@@ -124,12 +124,12 @@ struct LibraryView: View {
                 NavigationStack {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            if asking { ProgressView(ChatGPTAccount.canUsePlan ? "姝ｅ湪璇㈤棶 ChatGPT鈥? : "姝ｅ湪璇㈤棶 DeepSeek鈥?) }
-                            Text(answer.isEmpty ? "杩樻病鏈夌瓟妗堛€? : answer)
+                            if asking { ProgressView(ChatGPTAccount.canUsePlan ? "正在询问 ChatGPT…" : "正在询问 DeepSeek…") }
+                            Text(answer.isEmpty ? "还没有答案。" : answer)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
                             if !answerSources.isEmpty {
-                                Text("寮曠敤").font(.headline)
+                                Text("引用").font(.headline)
                                 ForEach(answerSources) { source in
                                     Button(source.title) { showingAnswer = false; selectedItem = source }
                                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -138,14 +138,14 @@ struct LibraryView: View {
                         }
                         .padding()
                     }
-                    .navigationTitle("鍥炵瓟")
+                    .navigationTitle("回答")
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("鍏抽棴") { showingAnswer = false } } }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { showingAnswer = false } } }
                 }
                 .preferredColorScheme(.dark)
             }
-            .alert("鎻愮ず", isPresented: Binding(get: { errorMessage != nil || store.errorMessage != nil }, set: { if !$0 { errorMessage = nil; store.errorMessage = nil } })) {
-                Button("濂?) { errorMessage = nil; store.errorMessage = nil }
+            .alert("提示", isPresented: Binding(get: { errorMessage != nil || store.errorMessage != nil }, set: { if !$0 { errorMessage = nil; store.errorMessage = nil } })) {
+                Button("好") { errorMessage = nil; store.errorMessage = nil }
             } message: { Text(errorMessage ?? store.errorMessage ?? "") }
         }
     }
@@ -186,7 +186,7 @@ struct LibraryView: View {
                 defer { importing = false }
                 for url in urls {
                     do { _ = try await store.importAudio(from: url) }
-                    catch { errorMessage = "\(url.lastPathComponent)锛歕(error.localizedDescription)" }
+                    catch { errorMessage = "\(url.lastPathComponent)：\(error.localizedDescription)" }
                 }
             }
         }
@@ -227,16 +227,16 @@ private struct RecordingRow: View {
                 }
                 HStack {
                     Text(item.createdAt, format: .dateTime.month().day().hour().minute())
-                    Text("路")
+                    Text("·")
                     Text(Recording.timeText(item.duration)).monospacedDigit()
-                    if !item.summary.isEmpty { Text("路 AI澶勭悊瀹屾瘯 路 \(Recording.countText(item.transcript.count))瀛?) }
+                    if !item.summary.isEmpty { Text("· AI处理完毕 · \(Recording.countText(item.transcript.count))字") }
                     else if queued {
-                        Text("路 鎺掗槦涓?).foregroundStyle(.yellow)
+                        Text("· 排队中").foregroundStyle(.yellow)
                     } else if !item.transcript.isEmpty {
-                        Text("路 宸茶浆鍐?\(Recording.countText(item.transcript.count))瀛?)
+                        Text("· 已转写 \(Recording.countText(item.transcript.count))字")
                             .foregroundStyle(transcribing ? Color.yellow : Color.secondary)
                     } else if transcribing {
-                        Text("路 姝ｅ湪杞啓").foregroundStyle(.yellow)
+                        Text("· 正在转写").foregroundStyle(.yellow)
                     }
                 }.font(.caption).foregroundStyle(.secondary)
             }

@@ -5,6 +5,11 @@ enum MeetingMemory {
         get { UserDefaults.standard.string(forKey: "ds.memory") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "ds.memory") }
     }
+
+    static var prompt: String {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? "（暂无）" : value
+    }
 }
 
 enum DeepSeekSettings {
@@ -43,7 +48,7 @@ enum DeepSeekClient {
             "stream": true,
             "messages": [
                 ["role": "system", "content": "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。"],
-                ["role": "system", "content": "以下是用户的长期记忆，之后的每次会议总结都必须遵守。涉及人物、偏好、项目和已确认事实时以此为准，不要忽略：\n\(MeetingMemory.text.isEmpty ? "（暂无）" : MeetingMemory.text)"],
+                ["role": "system", "content": "以下是用户的长期记忆，之后的每次会议总结都必须遵守。涉及人物、偏好、项目和已确认事实时以此为准，不要忽略：\n\(MeetingMemory.prompt)"],
                 ["role": "user", "content": String(transcript.prefix(24_000))]
             ]
         ]
@@ -105,7 +110,7 @@ enum DeepSeekClient {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func ask(question: String, recordings: [Recording]) async throws -> (answer: String, sources: [UUID]) {
+    static func ask(question: String, recordings: [Recording], onProgress: @escaping (Double) -> Void = { _ in }) async throws -> (answer: String, sources: [UUID]) {
         let key = DeepSeekSettings.apiKey
         guard !key.isEmpty else { throw RecorderError.message("请先在设置中填写 DeepSeek API Key。") }
         guard !recordings.isEmpty else { throw RecorderError.message("还没有录音可以提问。") }
@@ -120,21 +125,34 @@ enum DeepSeekClient {
         let body: [String: Any] = [
             "model": "deepseek-chat",
             "messages": [
-                ["role": "system", "content": "你是会议资料助手。先理解问题，再根据每条录音的日期、时长、字数、标题、总结和转写作统计或查找，不要只匹配关键词。可以回答这周开了几次会、转写了多少字、最长会议是什么时候、讲了什么，也可以按主题找录音。先写答案，最后一行以「引用：」开头列出用到的 UUID，逗号分隔。已知记忆：\(MeetingMemory.text)"],
+                ["role": "system", "content": "你是会议资料助手。先理解问题，再根据每条录音的日期、时长、字数、标题、总结和转写作统计或查找，不要只匹配关键词。可以回答这周开了几次会、转写了多少字、最长会议是什么时候、讲了什么，也可以按主题找录音。必须遵守用户长期记忆。先写答案，最后一行以「引用：」开头列出用到的 UUID，逗号分隔。"],
+                ["role": "system", "content": "用户长期记忆：\n\(MeetingMemory.prompt)"],
                 ["role": "user", "content": "问题：\(question)\n\n\(corpus.prefix(24_000))"]
-            ]
+            ],
+            "stream": true
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw RecorderError.message("DeepSeek 回答失败。")
         }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let message = choices.first?["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw RecorderError.message("DeepSeek 没有返回答案。")
+        onProgress(0)
+        var collected = ""
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data:") else { continue }
+            let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if payload == "[DONE]" { break }
+            guard let data = payload.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let delta = choices.first?["delta"] as? [String: Any],
+                  let piece = delta["content"] as? String else { continue }
+            collected += piece
+            onProgress(min(0.98, Double(collected.count) / 800))
         }
+        let content = collected.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { throw RecorderError.message("DeepSeek 没有返回答案。") }
+        onProgress(1)
         var answer = content
         var sources: [UUID] = []
         if let range = content.range(of: "引用：") {

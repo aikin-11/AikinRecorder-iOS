@@ -291,30 +291,31 @@ enum MeetingAI {
         case .deepseek:
             return try await DeepSeekClient.summarize(transcript: transcript, onProgress: onProgress)
         case .chatgpt:
-            let instructions = "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。以下是用户的长期记忆，必须遵守：\n\(MeetingMemory.text.isEmpty ? "（暂无）" : MeetingMemory.text)"
-            return try await ChatGPTClient.complete(instructions: instructions, input: String(transcript.prefix(24_000)), onProgress: onProgress)
+            let instructions = "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。必须遵守用户长期记忆里的人物、项目和偏好。"
+            let input = "用户长期记忆：\n\(MeetingMemory.prompt)\n\n会议转写：\n\(String(transcript.prefix(24_000)))"
+            return try await ChatGPTClient.complete(instructions: instructions, input: input, onProgress: onProgress)
         }
     }
 
-    static func ask(question: String, recordings: [Recording], engine: AnswerEngine) async throws -> (answer: String, sources: [UUID]) {
+    static func ask(question: String, recordings: [Recording], engine: AnswerEngine, onProgress: @escaping (Double) -> Void = { _ in }) async throws -> (answer: String, sources: [UUID]) {
         switch engine {
         case .local:
             throw RecorderError.message("本地搜索不用提问。")
         case .deepseek:
-            return try await DeepSeekClient.ask(question: question, recordings: recordings)
+            return try await DeepSeekClient.ask(question: question, recordings: recordings, onProgress: onProgress)
         case .chatgpt:
-            return try await askChatGPT(question: question, recordings: recordings)
+            return try await askChatGPT(question: question, recordings: recordings, onProgress: onProgress)
         }
     }
 
-    private static func askChatGPT(question: String, recordings: [Recording]) async throws -> (answer: String, sources: [UUID]) {
+    private static func askChatGPT(question: String, recordings: [Recording], onProgress: @escaping (Double) -> Void) async throws -> (answer: String, sources: [UUID]) {
         guard !recordings.isEmpty else { throw RecorderError.message("还没有录音可以提问。") }
         let corpus = recordings.prefix(20).map { item in
             let date = item.createdAt.formatted(date: .numeric, time: .shortened)
             return "[\(item.id.uuidString)] \(date) 时长\(Int(item.duration))秒 字数\(item.transcript.count) 标题：\(item.title)\n总结：\(item.summary.prefix(400))\n转写：\(item.transcript.prefix(2_000))"
         }.joined(separator: "\n\n")
-        let instructions = "你是会议资料助手。先理解问题，再根据每条录音的日期、时长、字数、标题、总结和转写作统计或查找。先写答案，最后一行以「引用：」开头列出用到的 UUID，逗号分隔。已知记忆：\(MeetingMemory.text)"
-        let content = try await ChatGPTClient.complete(instructions: instructions, input: "问题：\(question)\n\n\(corpus.prefix(24_000))")
+        let instructions = "你是会议资料助手。先理解问题，再根据每条录音的日期、时长、字数、标题、总结和转写作统计或查找。必须遵守用户长期记忆里的人物、项目和偏好。先写答案，最后一行以「引用：」开头列出用到的 UUID，逗号分隔。"
+        let content = try await ChatGPTClient.complete(instructions: instructions, input: "用户长期记忆：\n\(MeetingMemory.prompt)\n\n问题：\(question)\n\n\(corpus.prefix(24_000))", onProgress: onProgress)
         var answer = content
         var sources: [UUID] = []
         if let range = content.range(of: "引用：") {

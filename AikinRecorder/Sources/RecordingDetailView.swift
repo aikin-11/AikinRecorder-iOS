@@ -388,7 +388,7 @@ private struct SummarySheet: View {
 
 }
 
-private struct MarkdownSummary: View {
+struct MarkdownSummary: View {
     let text: String
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -417,18 +417,17 @@ private struct MarkdownSummary: View {
     }
 
     private func inline(_ source: String) -> AttributedString {
-        var result = AttributedString()
-        var rest = source
-        while let start = rest.range(of: "**") {
-            result += AttributedString(rest[..<start.lowerBound])
-            rest = String(rest[start.upperBound...])
-            guard let end = rest.range(of: "**") else { result += AttributedString("**" + rest); return result }
-            var bold = AttributedString(rest[..<end.lowerBound])
-            bold.font = .body.bold()
-            result += bold
-            rest = String(rest[end.upperBound...])
+        var line = source
+        var bullet = false
+        for prefix in ["* ", "- ", "+ "] where line.hasPrefix(prefix) {
+            line.removeFirst(prefix.count)
+            bullet = true
+            break
         }
-        result += AttributedString(rest.replacingOccurrences(of: "*", with: ""))
-        return result
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        let parsed = (try? AttributedString(markdown: line, options: options))
+            ?? AttributedString(line.replacingOccurrences(of: "*", with: ""))
+        guard bullet else { return parsed }
+        return AttributedString("• ") + parsed
     }
 }

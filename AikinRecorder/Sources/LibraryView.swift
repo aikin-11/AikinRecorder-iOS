@@ -6,6 +6,7 @@ struct LibraryView: View {
     @State private var query = ""
     @State private var engine: AnswerEngine = .local
     @State private var asking = false
+    @State private var askProgress = 0.0
     @State private var answer = ""
     @State private var answerSources: [Recording] = []
     @State private var showingAnswer = false
@@ -127,15 +128,25 @@ struct LibraryView: View {
                 NavigationStack {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            if asking { ProgressView("正在询问 \(engine.title)…") }
-                            Text(answer.isEmpty ? "还没有答案。" : answer)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
+                            if asking {
+                                ProgressView(value: askProgress) {
+                                    Text("正在询问 \(engine.title)…")
+                                }
+                            }
+                            if !answer.isEmpty {
+                                MarkdownSummary(text: answer)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                             if !answerSources.isEmpty {
                                 Text("引用").font(.headline)
                                 ForEach(answerSources) { source in
-                                    Button(source.title) { showingAnswer = false; selectedItem = source }
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Button { showingAnswer = false; selectedItem = source } label: {
+                                        Text(source.title)
+                                            .underline()
+                                            .foregroundStyle(.yellow)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -157,14 +168,18 @@ struct LibraryView: View {
         let question = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard engine != .local, !question.isEmpty else { return }
         asking = true
+        askProgress = 0
         answer = ""
         answerSources = []
+        query = ""
         showingAnswer = true
         let recordings = store.recordings
         Task {
             defer { asking = false }
             do {
-                let result = try await MeetingAI.ask(question: question, recordings: recordings, engine: engine)
+                let result = try await MeetingAI.ask(question: question, recordings: recordings, engine: engine) { value in
+                    Task { @MainActor in askProgress = value }
+                }
                 answer = result.answer
                 let ids = Set(result.sources)
                 answerSources = recordings.filter { ids.contains($0.id) }

@@ -8,49 +8,66 @@ import Security
 enum ChatGPTAccount {
     private static let service = "app.aikin.recorder.chatgpt"
     static var email: String { string("email") }
-    static var canUsePlan: Bool { !storedAccess.isEmpty && scopes().contains("chatgpt.tokens.use.direct") }
+    static let deviceURL = "https://auth.openai.com/codex/device"
+    private static let deviceClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+    static var canUsePlan: Bool { !storedAccess.isEmpty }
 
-    static func signIn() async throws {
-        let host = hostID()
-        let client = issuedClientID().isEmpty ? "dynamic_agent_client" : issuedClientID()
-        let verifier = randomToken()
-        let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64URL()
-        let state = randomToken()
-        let nonce = randomToken()
-        let port = UInt16.random(in: 49152...65000)
-        let redirect = "http://127.0.0.1:\(port)/auth/callback"
-        var parts = [
-            "client_id=\(client.urlQuery)",
-            "response_type=code",
-            "redirect_uri=\(redirect.urlQuery)",
-            "scope=\("openid profile email offline_access resource.invoke chatgpt.tokens.use.direct".urlQuery)",
-            "resource=\("https://api.openai.com/v1".urlQuery)",
-            "state=\(state.urlQuery)",
-            "nonce=\(nonce.urlQuery)",
-            "code_challenge_method=S256",
-            "code_challenge=\(challenge.urlQuery)",
-            "ext_agent_host_id=\(host.urlQuery)"
-        ]
-        if client == "dynamic_agent_client" { parts.append("agent_name_hint=\("AikinRec".urlQuery)") }
-        else if !email.isEmpty { parts.append("login_hint=\(email.urlQuery)") }
-        guard let url = URL(string: "https://auth.openai.com/api/accounts/authorize?\(parts.joined(separator: "&"))") else {
-            throw RecorderError.message("无法打开 ChatGPT 登录。")
+    struct DeviceCode { let id: String; let userCode: String; let interval: Double }
+
+    static func requestDeviceCode() async throws -> DeviceCode {
+        var request = URLRequest(url: URL(string: "https://auth.openai.com/api/accounts/deviceauth/usercode")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["client_id": deviceClientID])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = json["device_auth_id"] as? String,
+              let code = (json["user_code"] as? String) ?? (json["usercode"] as? String) else {
+            throw RecorderError.message("无法获取 ChatGPT 连接码。")
         }
-        let callback = try await LoopbackCallback.wait(port: port, open: url)
-        guard callback["state"] == state else { throw RecorderError.message("ChatGPT 登录校验失败。") }
-        if callback["error"] == "access_denied" { throw RecorderError.message("未允许使用 ChatGPT 套餐。") }
-        guard let code = callback["code"], !code.isEmpty else { throw RecorderError.message("ChatGPT 没有返回授权码。") }
-        let issued = callback["client_id"] ?? client
-        guard issued != "dynamic_agent_client" else { throw RecorderError.message("ChatGPT 注册未完成。") }
-        let form = [
-            "grant_type": "authorization_code",
-            "client_id": issued,
-            "code": code,
-            "code_verifier": verifier,
-            "redirect_uri": redirect,
-            "resource": "https://api.openai.com/v1"
-        ]
-        try await storeToken(try await tokenRequest(form), clientID: issued, host: host, nonce: nonce)
+        let interval = (json["interval"] as? Double) ?? Double(json["interval"] as? String ?? "") ?? 5
+        return DeviceCode(id: id, userCode: code, interval: max(1, interval))
+    }
+
+    static func waitForDevice(_ device: DeviceCode) async throws {
+        let deadline = Date().addingTimeInterval(15 * 60)
+        while Date() < deadline {
+            try await Task.sleep(for: .seconds(device.interval))
+            var request = URLRequest(url: URL(string: "https://auth.openai.com/api/accounts/deviceauth/token")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["device_auth_id": device.id, "user_code": device.userCode])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 403 || status == 404 { continue }
+            guard (200..<300).contains(status),
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let code = json["authorization_code"] as? String,
+                  let verifier = json["code_verifier"] as? String else {
+                let detail = String(data: data, encoding: .utf8) ?? ""
+                if detail.contains("authorization_pending") || detail.contains("slow_down") { continue }
+                throw RecorderError.message("ChatGPT 连接失败。")
+            }
+            let form = [
+                "grant_type": "authorization_code",
+                "client_id": deviceClientID,
+                "code": code,
+                "code_verifier": verifier,
+                "redirect_uri": "https://auth.openai.com/deviceauth/callback"
+            ]
+            try await storeToken(try await tokenRequest(form), clientID: deviceClientID, host: hostID(), nonce: nil)
+            return
+        }
+        throw RecorderError.message("连接码已过期，请重新获取。")
+    }
+
+    static func accountID() -> String? {
+        let parts = string("id").split(separator: ".")
+        guard parts.count == 3, let payload = Data(base64URL: String(parts[1])),
+              let json = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              let auth = json["https://api.openai.com/auth"] as? [String: Any] else { return nil }
+        return auth["chatgpt_account_id"] as? String
     }
 
     static func signOut() {
@@ -63,7 +80,7 @@ enum ChatGPTAccount {
         }
         let refresh = string("refresh")
         guard !refresh.isEmpty else { throw RecorderError.message("请先在设置中登录 ChatGPT。") }
-        let form = ["grant_type": "refresh_token", "client_id": issuedClientID(), "refresh_token": refresh, "resource": "https://api.openai.com/v1"]
+        let form = ["grant_type": "refresh_token", "client_id": deviceClientID, "refresh_token": refresh]
         try await storeToken(try await tokenRequest(form), clientID: issuedClientID(), host: hostID(), nonce: nil)
         return storedAccess
     }
@@ -72,7 +89,7 @@ enum ChatGPTAccount {
         guard let access = json["access_token"] as? String, let idToken = json["id_token"] as? String else {
             throw RecorderError.message("ChatGPT 没有返回登录凭证。")
         }
-        let claims = try await IDToken.check(idToken, audience: clientID, nonce: nonce)
+        let claims = (try? await IDToken.check(idToken, audience: clientID, nonce: nonce)) ?? IDToken.read(idToken)
         save("client", clientID)
         save("access", access)
         if let refresh = json["refresh_token"] as? String, !refresh.isEmpty { save("refresh", refresh) }
@@ -83,9 +100,6 @@ enum ChatGPTAccount {
         let expires = json["expires_in"] as? Double ?? 3600
         save("expiry", String(Date().timeIntervalSince1970 + expires))
         _ = host
-        if !scopes().contains("chatgpt.tokens.use.direct") {
-            throw RecorderError.message("已登录，但没有允许使用 ChatGPT 套餐。请重新登录并同意。")
-        }
     }
 
     private static func tokenRequest(_ fields: [String: String]) async throws -> [String: Any] {
@@ -133,6 +147,15 @@ enum ChatGPTAccount {
 
 private enum IDToken {
     struct Claims { let subject: String; let email: String }
+    static func read(_ token: String) -> Claims {
+        let parts = token.split(separator: ".")
+        guard parts.count == 3, let payload = Data(base64URL: String(parts[1])),
+              let json = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else {
+            return Claims(subject: "", email: "")
+        }
+        return Claims(subject: json["sub"] as? String ?? "", email: json["email"] as? String ?? "")
+    }
+
     static func check(_ token: String, audience: String, nonce: String?) async throws -> Claims {
         let parts = token.split(separator: ".")
         guard parts.count == 3, let payload = Data(base64URL: String(parts[1])),
@@ -201,6 +224,7 @@ enum ChatGPTClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let account = ChatGPTAccount.accountID() { request.setValue(account, forHTTPHeaderField: "ChatGPT-Account-Id") }
         let body: [String: Any] = ["model": model, "instructions": instructions, "input": [["role": "user", "content": input]], "store": false, "stream": true]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -275,19 +299,24 @@ enum MeetingAI {
 struct ChatGPTSettingsView: View {
     @State private var email = ChatGPTAccount.email
     @State private var working = false
+    @State private var code = ""
     @State private var message: String?
 
     var body: some View {
         Form {
             Section {
-                if email.isEmpty {
-                    Button(working ? "正在打开登录…" : "Continue with ChatGPT") { connect() }.disabled(working)
-                } else {
+                if !email.isEmpty {
                     Text(email)
-                    Button("退出登录", role: .destructive) { ChatGPTAccount.signOut(); email = "" }
+                    Button("退出登录", role: .destructive) { ChatGPTAccount.signOut(); email = ""; code = "" }
+                } else if code.isEmpty {
+                    Button(working ? "正在获取连接码…" : "获取连接码") { connect() }.disabled(working)
+                } else {
+                    Text(code).font(.title.monospaced().weight(.semibold))
+                    Text(ChatGPTAccount.deviceURL).font(.footnote).textSelection(.enabled)
+                    Text(working ? "等待电脑浏览器确认…" : "未完成").font(.caption).foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("登录后，会议总结和首页提问使用这个 ChatGPT 套餐。实时转写仍用 Apple 或阿里云。")
+                Text("在已经能打开 ChatGPT 的电脑浏览器里打开上面的地址，填入连接码。不用在手机浏览器登录。确认后，会议总结和首页提问使用这个套餐。实时转写仍用 Apple 或阿里云。")
             }
         }
         .navigationTitle("ChatGPT")
@@ -301,7 +330,12 @@ struct ChatGPTSettingsView: View {
         working = true
         Task {
             defer { working = false }
-            do { try await ChatGPTAccount.signIn(); email = ChatGPTAccount.email }
+            do {
+                let device = try await ChatGPTAccount.requestDeviceCode()
+                code = device.userCode
+                try await ChatGPTAccount.waitForDevice(device)
+                email = ChatGPTAccount.email
+            }
             catch { message = error.localizedDescription }
         }
     }

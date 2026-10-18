@@ -15,6 +15,7 @@ final class LibraryStore {
     var transcriptCursor: TimeInterval = 0
     var transcriptPaused = false
     var transcriptTick = 0
+    private(set) var todos: [TodoItem] = []
     let directory: URL
     private var speech: SpeechSession?
     private var transcriptionTask: Task<Void, Never>?
@@ -36,7 +37,38 @@ final class LibraryStore {
                 recordings = try JSONDecoder().decode([Recording].self, from: Data(contentsOf: indexURL))
             }
             recoverUnindexedAudio()
+            loadTodos()
         } catch { errorMessage = "文件库读取失败：\(error.localizedDescription)" }
+    }
+
+    private var todosURL: URL { directory.appendingPathComponent("todos.json") }
+
+    private func loadTodos() {
+        guard FileManager.default.fileExists(atPath: todosURL.path),
+              let data = try? Data(contentsOf: todosURL),
+              let saved = try? JSONDecoder().decode([TodoItem].self, from: data) else { return }
+        todos = saved
+    }
+
+    private func saveTodos() {
+        guard let data = try? JSONEncoder().encode(todos) else { return }
+        try? data.write(to: todosURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    func importTodos(from summary: String, recordingID: UUID) {
+        let incoming = TodoParser.titles(in: summary)
+        todos.removeAll { $0.recordingID == recordingID && !$0.done && !incoming.contains($0.title) }
+        let existing = Set(todos.filter { $0.recordingID == recordingID }.map(\.title))
+        for title in incoming where !existing.contains(title) {
+            todos.append(TodoItem(id: UUID(), title: title, done: false, recordingID: recordingID, createdAt: .now))
+        }
+        saveTodos()
+    }
+
+    func updateTodo(_ item: TodoItem) {
+        guard let index = todos.firstIndex(where: { $0.id == item.id }) else { return }
+        todos[index] = item
+        saveTodos()
     }
 
     func audioURL(for recording: Recording) -> URL { directory.appendingPathComponent(recording.fileName) }
@@ -150,11 +182,11 @@ final class LibraryStore {
         return url
     }
 
-    func shareSummary(_ item: Recording) throws -> URL {
+    func shareSummary(_ item: Recording, text: String? = nil) throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Exports/\(item.id)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent(Recording.cleanTitle(item.title) + "_会议总结").appendingPathExtension("txt")
-        try item.summary.write(to: url, atomically: true, encoding: .utf8)
+        try (text ?? item.summary).write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 

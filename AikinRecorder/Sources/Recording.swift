@@ -21,16 +21,18 @@ struct Recording: Identifiable, Codable, Hashable {
     var transcript: String
     var lines: [TranscriptCue]
     var summary: String
+    var summaryDeepSeek: String
+    var summaryChatGPT: String
     var marks: [RecordingMark]
     var transcribedThrough: TimeInterval
     var sourceHash: String
     var sourceBytes: Int64
 
     enum CodingKeys: String, CodingKey {
-        case id, title, fileName, createdAt, duration, transcript, lines, summary, marks, transcribedThrough, sourceHash, sourceBytes
+        case id, title, fileName, createdAt, duration, transcript, lines, summary, summaryDeepSeek, summaryChatGPT, marks, transcribedThrough, sourceHash, sourceBytes
     }
 
-    init(id: UUID, title: String, fileName: String, createdAt: Date, duration: TimeInterval, transcript: String, lines: [TranscriptCue] = [], summary: String = "", marks: [RecordingMark] = [], transcribedThrough: TimeInterval = 0, sourceHash: String = "", sourceBytes: Int64 = 0) {
+    init(id: UUID, title: String, fileName: String, createdAt: Date, duration: TimeInterval, transcript: String, lines: [TranscriptCue] = [], summary: String = "", summaryDeepSeek: String = "", summaryChatGPT: String = "", marks: [RecordingMark] = [], transcribedThrough: TimeInterval = 0, sourceHash: String = "", sourceBytes: Int64 = 0) {
         self.id = id
         self.title = title
         self.fileName = fileName
@@ -39,6 +41,8 @@ struct Recording: Identifiable, Codable, Hashable {
         self.transcript = transcript
         self.lines = lines
         self.summary = summary
+        self.summaryDeepSeek = summaryDeepSeek
+        self.summaryChatGPT = summaryChatGPT
         self.marks = marks
         self.transcribedThrough = transcribedThrough
         self.sourceHash = sourceHash
@@ -55,6 +59,9 @@ struct Recording: Identifiable, Codable, Hashable {
         transcript = try container.decode(String.self, forKey: .transcript)
         lines = try container.decodeIfPresent([TranscriptCue].self, forKey: .lines) ?? []
         summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        summaryDeepSeek = try container.decodeIfPresent(String.self, forKey: .summaryDeepSeek) ?? ""
+        summaryChatGPT = try container.decodeIfPresent(String.self, forKey: .summaryChatGPT) ?? ""
+        if summaryDeepSeek.isEmpty, summaryChatGPT.isEmpty, !summary.isEmpty { summaryDeepSeek = summary }
         marks = try container.decodeIfPresent([RecordingMark].self, forKey: .marks) ?? []
         transcribedThrough = try container.decodeIfPresent(TimeInterval.self, forKey: .transcribedThrough) ?? 0
         sourceHash = try container.decodeIfPresent(String.self, forKey: .sourceHash) ?? ""
@@ -71,10 +78,24 @@ struct Recording: Identifiable, Codable, Hashable {
         try container.encode(transcript, forKey: .transcript)
         try container.encode(lines, forKey: .lines)
         try container.encode(summary, forKey: .summary)
+        try container.encode(summaryDeepSeek, forKey: .summaryDeepSeek)
+        try container.encode(summaryChatGPT, forKey: .summaryChatGPT)
         try container.encode(marks, forKey: .marks)
         try container.encode(transcribedThrough, forKey: .transcribedThrough)
         try container.encode(sourceHash, forKey: .sourceHash)
         try container.encode(sourceBytes, forKey: .sourceBytes)
+    }
+
+    var hasSummary: Bool { !summaryDeepSeek.isEmpty || !summaryChatGPT.isEmpty }
+
+    func summaryText(chatgpt: Bool) -> String {
+        if chatgpt { return summaryChatGPT }
+        return summaryDeepSeek.isEmpty && summaryChatGPT.isEmpty ? summary : summaryDeepSeek
+    }
+
+    mutating func storeSummary(_ text: String, chatgpt: Bool) {
+        if chatgpt { summaryChatGPT = text } else { summaryDeepSeek = text }
+        summary = text
     }
 
     static func meetingTitle(at date: Date = .now) -> String {

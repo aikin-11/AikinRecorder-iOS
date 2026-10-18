@@ -137,7 +137,7 @@ struct RecordingDetailView: View {
                     Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }.disabled(store.queuedIDs.contains(item.id))
                     Button("查找", systemImage: "magnifyingglass") { showingFind = true }
                     Button("标记说明", systemImage: "star") { showingMarks = true }.disabled(item.marks.isEmpty)
-                    Button(item.summary.isEmpty ? "会议总结" : "查看总结", systemImage: "sparkles") { openSummary() }
+                    Button(item.hasSummary ? "查看总结" : "会议总结", systemImage: "sparkles") { openSummary() }
                 } label: { Image(systemName: "ellipsis") }.accessibilityLabel("更多操作")
             }
         }
@@ -182,8 +182,8 @@ struct RecordingDetailView: View {
         .sheet(isPresented: $showingSummary, onDismiss: {
             if titleReady { titleReady = false; offeringTitle = true }
         }) {
-            SummarySheet(summary: item.summary, progress: summaryProgress, working: summarizing, engine: $summaryEngine, regenerate: { summarize() }) {
-                do { SystemPresenter.share(try store.shareSummary(item)) }
+            SummarySheet(deepSeek: item.summaryText(chatgpt: false), chatGPT: item.summaryText(chatgpt: true), progress: summaryProgress, working: summarizing, engine: $summaryEngine, regenerate: { summarize() }) {
+                do { SystemPresenter.share(try store.shareSummary(item, text: item.summaryText(chatgpt: summaryEngine == .chatgpt))) }
                 catch { errorMessage = error.localizedDescription }
             }
         }
@@ -294,12 +294,14 @@ struct RecordingDetailView: View {
         Task {
             defer { summarizing = false }
             do {
-                item.summary = try await MeetingAI.summarize(transcript: transcript, engine: summaryEngine) { value in
+                let text = try await MeetingAI.summarize(transcript: transcript, engine: summaryEngine) { value in
                     Task { @MainActor in summaryProgress = value }
                 }
+                item.storeSummary(text, chatgpt: summaryEngine == .chatgpt)
                 summaryProgress = 1
                 save()
-                let theme = DeepSeekClient.theme(from: item.summary)
+                store.importTodos(from: text, recordingID: item.id)
+                let theme = DeepSeekClient.theme(from: text)
                 if !theme.isEmpty, theme != item.title {
                     suggestedTitle = theme
                     titleReady = true
@@ -339,13 +341,16 @@ struct RecordingDetailView: View {
 }
 
 private struct SummarySheet: View {
-    let summary: String
+    let deepSeek: String
+    let chatGPT: String
     let progress: Double
     let working: Bool
     @Binding var engine: AnswerEngine
     let regenerate: () -> Void
     let export: () -> Void
     @Environment(\.dismiss) private var dismiss
+
+    private var summary: String { engine == .chatgpt ? chatGPT : deepSeek }
 
     var body: some View {
         NavigationStack {
@@ -357,9 +362,6 @@ private struct SummarySheet: View {
                 .pickerStyle(.segmented)
                 .disabled(working)
                 .padding(.horizontal)
-                Button(summary.isEmpty ? "生成总结" : "重新总结", action: regenerate)
-                    .disabled(working)
-                    .padding(.horizontal)
                 if working {
                     ProgressView(value: progress) { Text("正在用 \(engine.title) 生成会议总结…").font(.footnote) }
                         .padding(.horizontal)
@@ -368,7 +370,16 @@ private struct SummarySheet: View {
                     MarkdownSummary(text: summary.isEmpty ? (working ? "正在整理…" : "还没有总结。") : summary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
+                        .padding(.bottom, 64)
                 }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Button(summary.isEmpty ? "生成总结" : "重新总结", action: regenerate)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.yellow)
+                    .foregroundStyle(.black)
+                    .disabled(working)
+                    .padding(16)
             }
             .navigationTitle("会议总结")
             .navigationBarTitleDisplayMode(.inline)
@@ -398,22 +409,50 @@ struct MarkdownSummary: View {
                     Text(inline(line)).font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline).textSelection(.enabled)
                 case .paragraph(let line):
                     Text(inline(line)).font(.body).textSelection(.enabled)
+                case .table(let rows):
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                            HStack(alignment: .top, spacing: 8) {
+                                ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                                    Text(inline(cell)).font(index == 0 ? .caption.bold() : .caption).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                                }
+                            }
+                            if index == 0 { Divider() }
+                        }
+                    }
+                    .padding(8)
+                    .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                 }
             }
         }
     }
 
-    private enum Block { case heading(Int, String), paragraph(String) }
+    private enum Block { case heading(Int, String), paragraph(String), table([[String]]) }
 
     private var blocks: [Block] {
-        text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n").compactMap { raw in
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.isEmpty { return nil }
-            if line.hasPrefix("### ") { return .heading(3, String(line.dropFirst(4))) }
-            if line.hasPrefix("## ") { return .heading(2, String(line.dropFirst(3))) }
-            if line.hasPrefix("# ") { return .heading(1, String(line.dropFirst(2))) }
-            return .paragraph(line)
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\t", with: " | ").components(separatedBy: "\n")
+        var result: [Block] = []
+        var table: [[String]] = []
+        func flushTable() {
+            let rows = table.filter { row in !row.allSatisfy { $0.replacingOccurrences(of: "-", with: "").isEmpty } }
+            if !rows.isEmpty { result.append(.table(rows)) }
+            table = []
         }
+        for raw in lines {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { flushTable(); continue }
+            if line.contains("|") {
+                let cells = line.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                if cells.count >= 2 { table.append(cells); continue }
+            }
+            flushTable()
+            if line.hasPrefix("### ") { result.append(.heading(3, String(line.dropFirst(4)))) }
+            else if line.hasPrefix("## ") { result.append(.heading(2, String(line.dropFirst(3)))) }
+            else if line.hasPrefix("# ") { result.append(.heading(1, String(line.dropFirst(2)))) }
+            else { result.append(.paragraph(line)) }
+        }
+        flushTable()
+        return result
     }
 
     private func inline(_ source: String) -> AttributedString {

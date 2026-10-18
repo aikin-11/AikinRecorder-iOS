@@ -15,6 +15,8 @@ struct LibraryView: View {
     @State private var importing = false
     @State private var errorMessage: String?
     @State private var itemToDelete: Recording?
+    @State private var deleteAnchor = CGPoint(x: 180, y: 320)
+    @State private var showingTodos = false
     @State private var selectedItem: Recording?
 
     private var items: [Recording] {
@@ -42,7 +44,7 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(items) { item in
-                            LongPressDeleteRow(onDelete: { itemToDelete = item }, onOpen: { selectedItem = item }) {
+                            LongPressDeleteRow(onDelete: { point in deleteAnchor = point; itemToDelete = item }, onOpen: { selectedItem = item }) {
                                 RecordingRow(item: item, query: query, transcribing: store.transcribingID == item.id, queued: store.queuedIDs.contains(item.id))
                             }
                             .listRowBackground(Color.black)
@@ -89,13 +91,22 @@ struct LibraryView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(engine.title)
-                        TextField(engine == .local ? "输入标题或内容" : engine.title, text: $query)
+                        TextField(engine == .local ? "输入标题或内容" : "输入内容", text: $query)
                             .textInputAutocapitalization(.never)
                             .onSubmit { if engine != .local { ask() } }
                     }
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .glassEffect(.regular, in: .capsule)
+                    Button { showingTodos = true } label: {
+                        Image(systemName: "checklist")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel("待办")
                     Menu {
                         Button("录音实时转写", systemImage: "mic") { showingRecorder = true }
                         Button("导入外部音频", systemImage: "square.and.arrow.down") { importAudio() }
@@ -118,12 +129,31 @@ struct LibraryView: View {
             .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item, initialQuery: query) }
             .sheet(isPresented: $showingRecorder) { RecorderView() }
             .overlay { if importing { ProgressView("正在导入…").padding(24).glassEffect(in: .rect(cornerRadius: 20)) } }
-            .confirmationDialog("确定要删除吗？", isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }), titleVisibility: .visible) {
-                Button("删除录音", role: .destructive) {
-                    if let item = itemToDelete { do { try store.remove(item) } catch { errorMessage = error.localizedDescription } }
-                    itemToDelete = nil
+            .overlay {
+                GeometryReader { geo in
+                    if let item = itemToDelete {
+                        let frame = geo.frame(in: .global)
+                        let x = min(max(deleteAnchor.x - frame.minX, 120), max(120, geo.size.width - 120))
+                        let y = min(max(deleteAnchor.y - frame.minY, 70), max(70, geo.size.height - 90))
+                        Color.black.opacity(0.28)
+                            .ignoresSafeArea()
+                            .onTapGesture { itemToDelete = nil }
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("确定要删除吗？").font(.headline)
+                            Button("删除录音", role: .destructive) {
+                                do { try store.remove(item) } catch { errorMessage = error.localizedDescription }
+                                itemToDelete = nil
+                            }
+                            Button("取消", role: .cancel) { itemToDelete = nil }
+                        }
+                        .padding(16)
+                        .frame(width: 220, alignment: .leading)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        .position(x: x, y: y)
+                    }
                 }
             }
+            .sheet(isPresented: $showingTodos) { TodoListView() }
             .sheet(isPresented: $showingAnswer) {
                 NavigationStack {
                     ScrollView {
@@ -213,7 +243,7 @@ struct LibraryView: View {
 }
 
 private struct LongPressDeleteRow<Content: View>: View {
-    let onDelete: () -> Void
+    let onDelete: (CGPoint) -> Void
     let onOpen: () -> Void
     @ViewBuilder var content: () -> Content
     @State private var suppressTap = false
@@ -224,10 +254,122 @@ private struct LongPressDeleteRow<Content: View>: View {
             onOpen()
         } label: { content() }
             .buttonStyle(.plain)
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                suppressTap = true
-                onDelete()
-            })
+            .background {
+                PressPointReader { point in
+                    suppressTap = true
+                    onDelete(point)
+                }
+            }
+    }
+}
+
+private struct PressPointReader: UIViewRepresentable {
+    var onPress: (CGPoint) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPress: onPress) }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onPress = onPress
+        DispatchQueue.main.async {
+            guard let host = uiView.superview, context.coordinator.attached !== host else { return }
+            context.coordinator.attached?.removeGestureRecognizer(context.coordinator.press)
+            host.addGestureRecognizer(context.coordinator.press)
+            context.coordinator.attached = host
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onPress: (CGPoint) -> Void
+        weak var attached: UIView?
+        let press: UILongPressGestureRecognizer
+        init(onPress: @escaping (CGPoint) -> Void) {
+            self.onPress = onPress
+            press = UILongPressGestureRecognizer()
+            super.init()
+            press.minimumPressDuration = 0.45
+            press.cancelsTouchesInView = false
+            press.delegate = self
+            press.addTarget(self, action: #selector(pressed(_:)))
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+        @objc func pressed(_ gesture: UILongPressGestureRecognizer) {
+            guard gesture.state == .began, let view = gesture.view else { return }
+            let point = gesture.location(in: view.window)
+            onPress(point)
+        }
+    }
+}
+
+private struct TodoListView: View {
+    @Environment(LibraryStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if store.todos.isEmpty {
+                    ContentUnavailableView("还没有待办", systemImage: "checklist", description: Text("会议总结里的待办会出现在这里。"))
+                } else {
+                    List {
+                        ForEach(store.todos) { item in
+                            TodoRow(item: item)
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("待办")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+private struct TodoRow: View {
+    @Environment(LibraryStore.self) private var store
+    let item: TodoItem
+    @State private var editing = false
+    @State private var draft = ""
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Button {
+                var next = item
+                next.done.toggle()
+                store.updateTodo(next)
+            } label: {
+                Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(item.done ? Color.yellow : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            Button { draft = item.title; editing = true } label: {
+                Text(item.title)
+                    .strikethrough(item.done)
+                    .foregroundStyle(item.done ? Color.secondary : Color.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading)
+            }
+            .buttonStyle(.plain)
+        }
+        .alert("编辑待办", isPresented: $editing) {
+            TextField("待办", text: $draft)
+            Button("保存") {
+                var next = item
+                let title = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return }
+                next.title = title
+                store.updateTodo(next)
+            }
+            Button("取消", role: .cancel) { }
+        }
     }
 }
 
@@ -247,7 +389,7 @@ private struct RecordingRow: View {
                     Text(item.createdAt, format: .dateTime.month().day().hour().minute())
                     Text("·")
                     Text(Recording.timeText(item.duration)).monospacedDigit()
-                    if !item.summary.isEmpty { Text("· AI处理完毕 · \(Recording.countText(item.transcript.count))字") }
+                    if item.hasSummary { Text("· AI处理完毕 · \(Recording.countText(item.transcript.count))字") }
                     else if queued {
                         Text("· 排队中").foregroundStyle(.yellow)
                     } else if !item.transcript.isEmpty {

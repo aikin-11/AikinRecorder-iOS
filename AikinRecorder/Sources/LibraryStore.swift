@@ -315,22 +315,35 @@ final class LibraryStore {
         return url
     }
 
+    func keepTranscribingInBackground() {
+        guard transcribingID != nil else { return }
+        holdBackground()
+    }
+
     private func holdBackground() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default)
+        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try? session.setActive(true)
         if silence == nil, let url = silentLoop() {
             silence = try? AVAudioPlayer(contentsOf: url)
         }
         silence?.numberOfLoops = -1
-        silence?.volume = 0
-        silence?.play()
-        if backgroundTask == .invalid {
-            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "transcribe") { [weak self] in
-                guard let self else { return }
-                UIApplication.shared.endBackgroundTask(self.backgroundTask)
-                self.backgroundTask = .invalid
-            }
+        silence?.volume = 0.01
+        if silence?.isPlaying != true { silence?.play() }
+        renewBackgroundTask()
+    }
+
+    private func renewBackgroundTask() {
+        let previous = backgroundTask
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "transcribe") { [weak self] in
+            guard let self else { return }
+            let expired = self.backgroundTask
+            if self.transcribingID != nil { self.holdBackground() }
+            if expired != .invalid { UIApplication.shared.endBackgroundTask(expired) }
+            if self.backgroundTask == expired { self.backgroundTask = .invalid }
+        }
+        if previous != .invalid, previous != backgroundTask {
+            UIApplication.shared.endBackgroundTask(previous)
         }
     }
 }

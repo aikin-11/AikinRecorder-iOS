@@ -62,8 +62,15 @@ struct LibraryView: View {
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(.white)
                     Spacer()
-                    Button { showingSettings = true } label: { Image(systemName: "gearshape") }
-                        .accessibilityLabel("设置")
+                    Button { showingSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel("设置")
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
@@ -196,21 +203,10 @@ private struct SwipeDeleteRow<Content: View>: View {
     @State private var base: CGFloat = 0
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            Button(action: onDelete) {
-                Text("删除")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.white)
-                    .frame(maxHeight: .infinity)
-                    .frame(width: 72)
-                    .background(Color.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.white.opacity(0.9), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .opacity(offset < -6 ? 1 : 0)
+        let reveal = max(0, -offset)
+        HStack(spacing: 0) {
             content()
-                .offset(x: offset)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(
                     HorizontalRowGesture(base: base) { value in
                         offset = min(0, max(-104, value))
@@ -231,6 +227,22 @@ private struct SwipeDeleteRow<Content: View>: View {
                         }
                     }
                 )
+            Color.clear
+                .frame(width: reveal)
+                .overlay(alignment: .trailing) {
+                    Button(action: onDelete) {
+                        Text("删除")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.white)
+                            .frame(maxHeight: .infinity)
+                            .frame(width: 72)
+                            .background(Color.black)
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.white.opacity(0.9), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .clipped()
         }
         .clipped()
     }
@@ -321,7 +333,7 @@ private struct RecordingRow: View {
                     Text(item.createdAt, format: .dateTime.month().day().hour().minute())
                     Text("·")
                     Text(Recording.timeText(item.duration)).monospacedDigit()
-                    if !item.summary.isEmpty { Text("· AI处理完毕") }
+                    if !item.summary.isEmpty { Text("· AI处理完毕 · \(item.transcript.count)字") }
                     else if queued {
                         Text("· 排队中").foregroundStyle(.yellow)
                     } else if !item.transcript.isEmpty {

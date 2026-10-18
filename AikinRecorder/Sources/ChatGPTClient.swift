@@ -275,15 +275,39 @@ enum ChatGPTClient {
     }
 }
 
+enum AnswerEngine: String, CaseIterable, Identifiable {
+    case local, deepseek, chatgpt
+    var id: String { rawValue }
+    var title: String { switch self { case .local: "本地"; case .deepseek: "DeepSeek"; case .chatgpt: "ChatGPT" } }
+    var next: AnswerEngine { switch self { case .local: .deepseek; case .deepseek: .chatgpt; case .chatgpt: .local } }
+    var tint: Color { switch self { case .local: .secondary; case .deepseek: .yellow; case .chatgpt: .red } }
+}
+
 enum MeetingAI {
-    static func summarize(transcript: String, onProgress: @escaping (Double) -> Void) async throws -> String {
-        guard ChatGPTAccount.canUsePlan else { return try await DeepSeekClient.summarize(transcript: transcript, onProgress: onProgress) }
-        let instructions = "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。以下是用户的长期记忆，必须遵守：\n\(MeetingMemory.text.isEmpty ? "（暂无）" : MeetingMemory.text)"
-        return try await ChatGPTClient.complete(instructions: instructions, input: String(transcript.prefix(24_000)), onProgress: onProgress)
+    static func summarize(transcript: String, engine: AnswerEngine, onProgress: @escaping (Double) -> Void) async throws -> String {
+        switch engine {
+        case .local:
+            throw RecorderError.message("会议总结请选择 DeepSeek 或 ChatGPT。")
+        case .deepseek:
+            return try await DeepSeekClient.summarize(transcript: transcript, onProgress: onProgress)
+        case .chatgpt:
+            let instructions = "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。以下是用户的长期记忆，必须遵守：\n\(MeetingMemory.text.isEmpty ? "（暂无）" : MeetingMemory.text)"
+            return try await ChatGPTClient.complete(instructions: instructions, input: String(transcript.prefix(24_000)), onProgress: onProgress)
+        }
     }
 
-    static func ask(question: String, recordings: [Recording]) async throws -> (answer: String, sources: [UUID]) {
-        guard ChatGPTAccount.canUsePlan else { return try await DeepSeekClient.ask(question: question, recordings: recordings) }
+    static func ask(question: String, recordings: [Recording], engine: AnswerEngine) async throws -> (answer: String, sources: [UUID]) {
+        switch engine {
+        case .local:
+            throw RecorderError.message("本地搜索不用提问。")
+        case .deepseek:
+            return try await DeepSeekClient.ask(question: question, recordings: recordings)
+        case .chatgpt:
+            return try await askChatGPT(question: question, recordings: recordings)
+        }
+    }
+
+    private static func askChatGPT(question: String, recordings: [Recording]) async throws -> (answer: String, sources: [UUID]) {
         guard !recordings.isEmpty else { throw RecorderError.message("还没有录音可以提问。") }
         let corpus = recordings.prefix(20).map { item in
             let date = item.createdAt.formatted(date: .numeric, time: .shortened)

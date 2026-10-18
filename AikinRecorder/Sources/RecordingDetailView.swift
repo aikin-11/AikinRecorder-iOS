@@ -20,6 +20,7 @@ struct RecordingDetailView: View {
     @State private var showingMarks = false
     @State private var transcriptScrubbing = false
     @State private var confirmingRetranscribe = false
+    @State private var summaryEngine: AnswerEngine = .deepseek
 
     var body: some View {
         @Bindable var player = player
@@ -181,7 +182,7 @@ struct RecordingDetailView: View {
         .sheet(isPresented: $showingSummary, onDismiss: {
             if titleReady { titleReady = false; offeringTitle = true }
         }) {
-            SummarySheet(summary: item.summary, progress: summaryProgress, working: summarizing) {
+            SummarySheet(summary: item.summary, progress: summaryProgress, working: summarizing, engine: $summaryEngine, regenerate: { summarize() }) {
                 do { SystemPresenter.share(try store.shareSummary(item)) }
                 catch { errorMessage = error.localizedDescription }
             }
@@ -283,10 +284,7 @@ struct RecordingDetailView: View {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    private func openSummary() {
-        if item.summary.isEmpty { summarize() }
-        else { showingSummary = true }
-    }
+    private func openSummary() { showingSummary = true }
 
     private func summarize() {
         summarizing = true
@@ -296,7 +294,7 @@ struct RecordingDetailView: View {
         Task {
             defer { summarizing = false }
             do {
-                item.summary = try await MeetingAI.summarize(transcript: transcript) { value in
+                item.summary = try await MeetingAI.summarize(transcript: transcript, engine: summaryEngine) { value in
                     Task { @MainActor in summaryProgress = value }
                 }
                 summaryProgress = 1
@@ -344,14 +342,26 @@ private struct SummarySheet: View {
     let summary: String
     let progress: Double
     let working: Bool
+    @Binding var engine: AnswerEngine
+    let regenerate: () -> Void
     let export: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
+                Picker("模型", selection: $engine) {
+                    Text("DeepSeek").tag(AnswerEngine.deepseek)
+                    Text("ChatGPT").tag(AnswerEngine.chatgpt)
+                }
+                .pickerStyle(.segmented)
+                .disabled(working)
+                .padding(.horizontal)
+                Button(summary.isEmpty ? "生成总结" : "重新总结", action: regenerate)
+                    .disabled(working)
+                    .padding(.horizontal)
                 if working {
-                    ProgressView(value: progress) { Text("正在生成会议总结…").font(.footnote) }
+                    ProgressView(value: progress) { Text("正在用 \(engine.title) 生成会议总结…").font(.footnote) }
                         .padding(.horizontal)
                 }
                 ScrollView {

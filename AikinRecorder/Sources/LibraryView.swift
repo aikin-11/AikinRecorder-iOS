@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Environment(LibraryStore.self) private var store
     @State private var query = ""
-    @State private var askMode = false
+    @State private var engine: AnswerEngine = .local
     @State private var asking = false
     @State private var answer = ""
     @State private var answerSources: [Recording] = []
@@ -17,7 +17,7 @@ struct LibraryView: View {
     @State private var selectedItem: Recording?
 
     private var items: [Recording] {
-        if askMode { return store.recordings }
+        if engine != .local { return store.recordings }
         return store.recordings.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.transcript.localizedCaseInsensitiveContains(query) }
     }
 
@@ -79,15 +79,18 @@ struct LibraryView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 10) {
                     HStack(spacing: 8) {
-                        Button { askMode.toggle() } label: {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(askMode ? Color.yellow : Color.secondary)
+                        Button { engine = engine.next } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "magnifyingglass")
+                                if engine != .local { Text(engine.title).font(.caption.weight(.semibold)) }
+                            }
+                            .foregroundStyle(engine.tint)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(askMode ? "关闭 DeepSeek 提问" : "用 DeepSeek 提问")
-                        TextField(askMode ? "向 DeepSeek 提问" : "输入标题或内容", text: $query)
+                        .accessibilityLabel(engine.title)
+                        TextField(engine == .local ? "输入标题或内容" : engine.title, text: $query)
                             .textInputAutocapitalization(.never)
-                            .onSubmit { if askMode { askDeepSeek() } }
+                            .onSubmit { if engine != .local { ask() } }
                     }
                     .padding(.horizontal, 12)
                     .frame(height: 44)
@@ -124,7 +127,7 @@ struct LibraryView: View {
                 NavigationStack {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            if asking { ProgressView(ChatGPTAccount.canUsePlan ? "正在询问 ChatGPT…" : "正在询问 DeepSeek…") }
+                            if asking { ProgressView("正在询问 \(engine.title)…") }
                             Text(answer.isEmpty ? "还没有答案。" : answer)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
@@ -150,9 +153,9 @@ struct LibraryView: View {
         }
     }
 
-    private func askDeepSeek() {
+    private func ask() {
         let question = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !question.isEmpty else { return }
+        guard engine != .local, !question.isEmpty else { return }
         asking = true
         answer = ""
         answerSources = []
@@ -161,7 +164,7 @@ struct LibraryView: View {
         Task {
             defer { asking = false }
             do {
-                let result = try await MeetingAI.ask(question: question, recordings: recordings)
+                let result = try await MeetingAI.ask(question: question, recordings: recordings, engine: engine)
                 answer = result.answer
                 let ids = Set(result.sources)
                 answerSources = recordings.filter { ids.contains($0.id) }

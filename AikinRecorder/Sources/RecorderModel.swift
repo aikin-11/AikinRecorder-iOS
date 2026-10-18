@@ -167,12 +167,12 @@ final class RecorderModel {
                 elapsedBeforePause = elapsed
                 startTime = nil
                 state = .paused
-                pushActivity(force: finished)
+                pushActivity(force: true)
             } else if state == .paused {
                 try engine.start()
                 startTime = .now
                 state = .recording
-                pushActivity(force: finished)
+                pushActivity(force: true)
             }
         } catch { errorMessage = error.localizedDescription }
     }

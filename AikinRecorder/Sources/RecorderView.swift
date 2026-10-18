@@ -30,7 +30,7 @@ struct RecorderView: View {
                 HStack {
                     Text(Recording.timeText(model.elapsed)).font(.title2.monospacedDigit())
                     Spacer()
-                    Text("\(model.lines.reduce(0) { $0 + $1.text.count }) 字").font(.subheadline.monospacedDigit())
+                    Text("\(Recording.countText(model.lines.reduce(0) { $0 + $1.text.count })) 字").font(.subheadline.monospacedDigit())
                     Spacer()
                     Text(model.state == .paused ? "已暂停" : model.status).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
                 }.padding(.horizontal)
@@ -97,6 +97,8 @@ struct RecorderView: View {
             } message: { Text(model.errorMessage ?? "") }
         }
         .preferredColorScheme(.dark).tint(.white)
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = model.state != .recording && model.state != .paused }
     }
 
     @ViewBuilder private var controls: some View {

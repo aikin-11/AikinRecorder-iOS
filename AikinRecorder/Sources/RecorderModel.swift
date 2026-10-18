@@ -75,7 +75,7 @@ final class RecorderModel {
                 service.onLines = { [weak self] lines in
                     Task { @MainActor in
                         self?.lines = lines
-                        self?.pushActivity(force: true)
+                        self?.pushActivity(force: false)
                     }
                 }
                 service.onStatus = { [weak self] message in
@@ -127,10 +127,9 @@ final class RecorderModel {
             }
             timer = Task { [weak self] in
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(33))
+                    try? await Task.sleep(for: .seconds(1))
                     guard let self else { return }
                     if self.state == .recording, let start = self.startTime { self.elapsed = self.elapsedBeforePause + Date().timeIntervalSince(start) }
-                    self.sampleLevel()
                     self.pushActivity(force: false)
                 }
             }
@@ -168,12 +167,12 @@ final class RecorderModel {
                 elapsedBeforePause = elapsed
                 startTime = nil
                 state = .paused
-                pushActivity(force: true)
+                pushActivity(force: finished)
             } else if state == .paused {
                 try engine.start()
                 startTime = .now
                 state = .recording
-                pushActivity(force: true)
+                pushActivity(force: finished)
             }
         } catch { errorMessage = error.localizedDescription }
     }
@@ -215,7 +214,7 @@ final class RecorderModel {
     private func pushActivity(force: Bool) {
         guard state == .recording || state == .paused else { return }
         let now = Date()
-        if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 0.05 { return }
+        if !force, let last = lastActivityUpdate, now.timeIntervalSince(last) < 2 { return }
         lastActivityUpdate = now
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
         let captions = lines.suffix(4).map { String($0.text.prefix(40)) }
@@ -233,7 +232,7 @@ final class RecorderModel {
         service.onLines = { [weak self] lines in
             Task { @MainActor in
                 self?.lines = lines
-                self?.pushActivity(force: true)
+                self?.pushActivity(force: false)
             }
         }
         service.onStatus = { [weak self] message in
@@ -256,12 +255,12 @@ final class RecorderModel {
             if lines[index].provisional || spoken.hasPrefix(previous) || previous.hasPrefix(spoken) {
                 lines[index].text = spoken
                 lines[index].provisional = !finished
-                pushActivity(force: true)
+                pushActivity(force: finished)
                 return
             }
         }
         lines.append(TranscriptLine(time: elapsed, text: spoken, provisional: !finished))
-        pushActivity(force: true)
+        pushActivity(force: finished)
     }
 
     func addMark() {

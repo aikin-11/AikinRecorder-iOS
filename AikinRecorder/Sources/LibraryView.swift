@@ -29,7 +29,7 @@ struct LibraryView: View {
                 VStack(spacing: 12) {
                     HStack(spacing: 12) {
                         statCard("录音", value: "\(store.recordings.count) 条")
-                        statCard("转写字数", value: "\(store.recordings.reduce(0) { $0 + $1.transcript.count })")
+                        statCard("转写字数", value: Recording.countText(store.recordings.reduce(0) { $0 + $1.transcript.count }))
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
@@ -208,12 +208,11 @@ private struct SwipeDeleteRow<Content: View>: View {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(
-                    HorizontalRowGesture(base: base) { value in
-                        offset = min(0, max(-104, value))
-                    } onEnd: { value in
-                        let open = value < -48
-                        base = open ? -96 : 0
-                        withAnimation(.snappy) { offset = base }
+                    HorizontalRowGesture(base: base, onReveal: {
+                        base = -96
+                        withAnimation(.snappy) { offset = -96 }
+                    }) { _ in
+                    } onEnd: { _ in
                     } onTap: { x, width in
                         if base < -8, x > width - 100 {
                             onDelete()
@@ -250,28 +249,28 @@ private struct SwipeDeleteRow<Content: View>: View {
 
 private struct HorizontalRowGesture: UIViewRepresentable {
     var base: CGFloat
+    var onReveal: () -> Void
     var onChange: (CGFloat) -> Void
     var onEnd: (CGFloat) -> Void
     var onTap: (CGFloat, CGFloat) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(base: base, onChange: onChange, onEnd: onEnd, onTap: onTap) }
+    func makeCoordinator() -> Coordinator { Coordinator(base: base, onReveal: onReveal, onChange: onChange, onEnd: onEnd, onTap: onTap) }
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
         view.backgroundColor = .clear
-        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
-        pan.delegate = context.coordinator
-        pan.cancelsTouchesInView = true
+        let press = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.press(_:)))
+        press.minimumPressDuration = 0.45
+        press.delegate = context.coordinator
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
-        tap.require(toFail: pan)
-        view.addGestureRecognizer(pan)
+        view.addGestureRecognizer(press)
         view.addGestureRecognizer(tap)
-        context.coordinator.pan = pan
         return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
         context.coordinator.base = base
+        context.coordinator.onReveal = onReveal
         context.coordinator.onChange = onChange
         context.coordinator.onEnd = onEnd
         context.coordinator.onTap = onTap
@@ -282,22 +281,19 @@ private struct HorizontalRowGesture: UIViewRepresentable {
         var onChange: (CGFloat) -> Void
         var onEnd: (CGFloat) -> Void
         var onTap: (CGFloat, CGFloat) -> Void
-        weak var pan: UIPanGestureRecognizer?
+        var onReveal: () -> Void
 
-        init(base: CGFloat, onChange: @escaping (CGFloat) -> Void, onEnd: @escaping (CGFloat) -> Void, onTap: @escaping (CGFloat, CGFloat) -> Void) {
+        init(base: CGFloat, onReveal: @escaping () -> Void, onChange: @escaping (CGFloat) -> Void, onEnd: @escaping (CGFloat) -> Void, onTap: @escaping (CGFloat, CGFloat) -> Void) {
             self.base = base
+            self.onReveal = onReveal
             self.onChange = onChange
             self.onEnd = onEnd
             self.onTap = onTap
         }
 
-        @objc func pan(_ gesture: UIPanGestureRecognizer) {
-            let dx = gesture.translation(in: gesture.view).x
-            switch gesture.state {
-            case .changed: onChange(base + dx)
-            case .ended, .cancelled, .failed: onEnd(base + dx)
-            default: break
-            }
+        @objc func press(_ gesture: UILongPressGestureRecognizer) {
+            guard gesture.state == .began else { return }
+            onReveal()
         }
 
         @objc func tap(_ gesture: UITapGestureRecognizer) {
@@ -305,14 +301,8 @@ private struct HorizontalRowGesture: UIViewRepresentable {
             onTap(gesture.location(in: view).x, view.bounds.width)
         }
 
-        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
-            let velocity = pan.velocity(in: pan.view)
-            return abs(velocity.x) > abs(velocity.y)
-        }
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
-            other.view is UIScrollView
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true
         }
     }
 }
@@ -333,11 +323,11 @@ private struct RecordingRow: View {
                     Text(item.createdAt, format: .dateTime.month().day().hour().minute())
                     Text("·")
                     Text(Recording.timeText(item.duration)).monospacedDigit()
-                    if !item.summary.isEmpty { Text("· AI处理完毕 · \(item.transcript.count)字") }
+                    if !item.summary.isEmpty { Text("· AI处理完毕 · \(Recording.countText(item.transcript.count))字") }
                     else if queued {
                         Text("· 排队中").foregroundStyle(.yellow)
                     } else if !item.transcript.isEmpty {
-                        Text("· 已转写 \(item.transcript.count)字")
+                        Text("· 已转写 \(Recording.countText(item.transcript.count))字")
                             .foregroundStyle(transcribing ? Color.yellow : Color.secondary)
                     } else if transcribing {
                         Text("· 正在转写").foregroundStyle(.yellow)

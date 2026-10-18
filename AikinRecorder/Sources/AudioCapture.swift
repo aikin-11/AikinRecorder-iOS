@@ -59,9 +59,6 @@ final class AudioCapture: @unchecked Sendable {
             do {
                 try file?.write(from: copy)
                 if let samples = copy.floatChannelData?[0], copy.frameLength > 0 {
-                    var sum: Float = 0
-                    for index in 0..<Int(copy.frameLength) { sum += samples[index] * samples[index] }
-                    onLevel(min(1, sqrt(sum / Float(copy.frameLength)) * 6))
                     onPCM?(samples, Int(copy.frameLength), copy.format.sampleRate)
                 }
                 guard let format = analyzerFormat, let converter, let continuation else { return }

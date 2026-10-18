@@ -27,7 +27,7 @@ struct RecordingDetailView: View {
             HStack {
                 Text(item.createdAt, format: .dateTime.year().month().day().hour().minute())
                 Spacer()
-                Text("\(item.transcript.count) 字").monospacedDigit()
+                Text("\(Recording.countText(item.transcript.count)) 字").monospacedDigit()
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -185,7 +185,12 @@ struct RecordingDetailView: View {
                 catch { errorMessage = error.localizedDescription }
             }
         }
-        .onAppear { player.load(store.audioURL(for: item)); findText = initialQuery }
+        .onAppear {
+            player.load(store.audioURL(for: item))
+            findText = initialQuery
+            UIApplication.shared.isIdleTimerDisabled = store.transcribingID == item.id
+        }
+        .onChange(of: store.transcribingID) { UIApplication.shared.isIdleTimerDisabled = store.transcribingID == item.id }
         .onChange(of: store.recordings.first { $0.id == item.id }?.transcript) {
             if store.transcribingID == item.id, let latest = store.recordings.first(where: { $0.id == item.id }) {
                 item.lines = latest.lines
@@ -201,6 +206,7 @@ struct RecordingDetailView: View {
             Button("保留原标题", role: .cancel) { }
         } message: { Text(suggestedTitle) }
         .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
             player.stop()
             save()
         }

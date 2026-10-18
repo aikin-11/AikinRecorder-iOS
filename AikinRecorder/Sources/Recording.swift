@@ -89,6 +89,13 @@ struct Recording: Identifiable, Codable, Hashable {
         return String((clean.isEmpty ? meetingTitle() : clean).prefix(100))
     }
 
+    static func countText(_ count: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: count)) ?? "\(count)"
+    }
+
     static func timeText(_ seconds: TimeInterval) -> String {
         let value = Int(max(0, seconds.isFinite ? seconds : 0))
         return String(format: "%02d:%02d:%02d", value / 3600, value / 60 % 60, value % 60)

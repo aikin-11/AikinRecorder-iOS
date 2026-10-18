@@ -80,8 +80,6 @@ struct RecordingLiveActivity: Widget {
         .frame(height: 96)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .glassEffect(.regular, in: .rect(cornerRadius: 28))
-        .activityBackgroundTint(.clear)
         .activitySystemActionForegroundColor(.white)
     }
 }

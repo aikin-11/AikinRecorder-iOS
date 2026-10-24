@@ -53,18 +53,28 @@ app_product = add('appProduct', '{isa = PBXFileReference; explicitFileType = wra
 test_product = add('testProduct', '{isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = AikinRecorderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR;}')
 widget_product = add('widgetProduct', '{isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = AikinRecorderLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR;}')
 widget_embed = add('widgetEmbed', '{isa = PBXBuildFile; fileRef = ' + widget_product + '; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);};}')
+watch_sources, watch_refs = [], []
+for path in sorted((ROOT / 'AikinRecorderWatch').glob('*.swift')):
+    relative = path.relative_to(ROOT).as_posix()
+    ref = add(relative, '{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ' + quote(relative) + '; sourceTree = SOURCE_ROOT;}')
+    watch_sources.append(add(relative + ':build', '{isa = PBXBuildFile; fileRef = ' + ref + ';}'))
+    watch_refs.append(ref)
+watch_product = add('watchProduct', '{isa = PBXFileReference; explicitFileType = wrapper.application; path = AikinRecorderWatch.app; sourceTree = BUILT_PRODUCTS_DIR;}')
+watch_embed = add('watchEmbed', '{isa = PBXBuildFile; fileRef = ' + watch_product + '; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);};}')
 src_group = add('sourcesGroup', '{isa = PBXGroup; children = ' + refs(source_refs) + '; name = Sources; sourceTree = "<group>";}')
 res_group = add('resourcesGroup', '{isa = PBXGroup; children = ' + refs(resource_refs) + '; name = Resources; sourceTree = "<group>";}')
 test_group = add('testsGroup', '{isa = PBXGroup; children = ' + refs(test_refs) + '; name = Tests; sourceTree = "<group>";}')
 widget_group = add('widgetGroup', '{isa = PBXGroup; children = ' + refs(widget_refs) + '; name = LiveActivity; sourceTree = "<group>";}')
-products = add('products', '{isa = PBXGroup; children = ' + refs([app_product, test_product, widget_product]) + '; name = Products; sourceTree = "<group>";}')
-main_group = add('mainGroup', '{isa = PBXGroup; children = ' + refs([src_group, res_group, test_group, widget_group, products]) + '; sourceTree = "<group>";}')
-for name, isa, files in [('appSources', 'PBXSourcesBuildPhase', app_sources), ('testSources', 'PBXSourcesBuildPhase', test_sources), ('widgetSources', 'PBXSourcesBuildPhase', widget_sources), ('appResources', 'PBXResourcesBuildPhase', resources), ('appFrameworks', 'PBXFrameworksBuildPhase', []), ('testFrameworks', 'PBXFrameworksBuildPhase', []), ('widgetFrameworks', 'PBXFrameworksBuildPhase', [])]:
+watch_group = add('watchGroup', '{isa = PBXGroup; children = ' + refs(watch_refs) + '; name = Watch; sourceTree = "<group>";}')
+products = add('products', '{isa = PBXGroup; children = ' + refs([app_product, test_product, widget_product, watch_product]) + '; name = Products; sourceTree = "<group>";}')
+main_group = add('mainGroup', '{isa = PBXGroup; children = ' + refs([src_group, res_group, test_group, widget_group, watch_group, products]) + '; sourceTree = "<group>";}')
+for name, isa, files in [('appSources', 'PBXSourcesBuildPhase', app_sources), ('testSources', 'PBXSourcesBuildPhase', test_sources), ('widgetSources', 'PBXSourcesBuildPhase', widget_sources), ('watchSources', 'PBXSourcesBuildPhase', watch_sources), ('appResources', 'PBXResourcesBuildPhase', resources), ('appFrameworks', 'PBXFrameworksBuildPhase', []), ('testFrameworks', 'PBXFrameworksBuildPhase', []), ('widgetFrameworks', 'PBXFrameworksBuildPhase', []), ('watchFrameworks', 'PBXFrameworksBuildPhase', [])]:
     add(name, '{isa = ' + isa + '; buildActionMask = 2147483647; files = ' + (refs(files) if files else '()') + '; runOnlyForDeploymentPostprocessing = 0;}')
 add('embedWidgets', '{isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = ' + refs([widget_embed]) + '; name = "Embed Foundation Extensions"; runOnlyForDeploymentPostprocessing = 0;}')
+add('embedWatch', '{isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = "$(CONTENTS_FOLDER_PATH)/Watch"; dstSubfolderSpec = 16; files = ' + refs([watch_embed]) + '; name = "Embed Watch Content"; runOnlyForDeploymentPostprocessing = 0;}')
 
 config_lists = {}
-for owner in ['project', 'app', 'test', 'widget']:
+for owner in ['project', 'app', 'test', 'widget', 'watch']:
     configs = []
     for mode in ['Debug', 'Release']:
         cfg = {'IPHONEOS_DEPLOYMENT_TARGET': '26.0', 'SDKROOT': 'iphoneos', 'SWIFT_VERSION': '5.0', 'CLANG_ENABLE_MODULES': 'YES', 'ENABLE_USER_SCRIPT_SANDBOXING': 'YES', 'CODE_SIGNING_ALLOWED': 'NO'}
@@ -73,11 +83,13 @@ for owner in ['project', 'app', 'test', 'widget']:
         else:
             cfg.update(SWIFT_OPTIMIZATION_LEVEL='-O', DEBUG_INFORMATION_FORMAT='dwarf-with-dsym', SWIFT_COMPILATION_MODE='wholemodule')
         if owner == 'app':
-            cfg.update(PRODUCT_NAME='AikinRecorder', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorder/Resources/Info.plist', GENERATE_INFOPLIST_FILE='NO', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', SUPPORTS_MACCATALYST='NO', CURRENT_PROJECT_VERSION='33', MARKETING_VERSION='1.32.0')
+            cfg.update(PRODUCT_NAME='AikinRecorder', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorder/Resources/Info.plist', GENERATE_INFOPLIST_FILE='NO', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', SUPPORTS_MACCATALYST='NO', CURRENT_PROJECT_VERSION='34', MARKETING_VERSION='1.33.0')
         if owner == 'test':
             cfg.update(PRODUCT_NAME='AikinRecorderTests', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.tests', GENERATE_INFOPLIST_FILE='YES', TEST_HOST='$(BUILT_PRODUCTS_DIR)/AikinRecorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AikinRecorder', BUNDLE_LOADER='$(TEST_HOST)', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @loader_path/Frameworks', TARGETED_DEVICE_FAMILY='1,2')
         if owner == 'widget':
-            cfg.update(PRODUCT_NAME='AikinRecorderLiveActivity', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.liveactivity', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorderLiveActivity/Info.plist', GENERATE_INFOPLIST_FILE='NO', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', CURRENT_PROJECT_VERSION='33', MARKETING_VERSION='1.32.0', APPLICATION_EXTENSION_API_ONLY='YES', CODE_SIGNING_REQUIRED='NO')
+            cfg.update(PRODUCT_NAME='AikinRecorderLiveActivity', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.liveactivity', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorderLiveActivity/Info.plist', GENERATE_INFOPLIST_FILE='NO', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', CURRENT_PROJECT_VERSION='34', MARKETING_VERSION='1.33.0', APPLICATION_EXTENSION_API_ONLY='YES', CODE_SIGNING_REQUIRED='NO')
+        if owner == 'watch':
+            cfg.update(PRODUCT_NAME='AikinRecorderWatch', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.watch', SDKROOT='watchos', TARGETED_DEVICE_FAMILY='4', INFOPLIST_FILE='AikinRecorderWatch/Info.plist', GENERATE_INFOPLIST_FILE='NO', WATCHOS_DEPLOYMENT_TARGET='26.0', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='watchos watchsimulator', CURRENT_PROJECT_VERSION='34', MARKETING_VERSION='1.33.0', CODE_SIGNING_REQUIRED='NO')
         configs.append(add(owner + mode, '{isa = XCBuildConfiguration; buildSettings = ' + settings(cfg) + '; name = ' + mode + ';}'))
     config_lists[owner] = add(owner + 'Configs', '{isa = XCConfigurationList; buildConfigurations = ' + refs(configs) + '; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;}')
 
@@ -85,14 +97,18 @@ project_id = uid('project')
 app_target = uid('appTarget')
 test_target = uid('testTarget')
 widget_target = uid('widgetTarget')
+watch_target = uid('watchTarget')
 proxy = add('proxy', '{isa = PBXContainerItemProxy; containerPortal = ' + project_id + '; proxyType = 1; remoteGlobalIDString = ' + app_target + '; remoteInfo = AikinRecorder;}')
 widget_proxy = add('widgetProxy', '{isa = PBXContainerItemProxy; containerPortal = ' + project_id + '; proxyType = 1; remoteGlobalIDString = ' + widget_target + '; remoteInfo = AikinRecorderLiveActivity;}')
+watch_proxy = add('watchProxy', '{isa = PBXContainerItemProxy; containerPortal = ' + project_id + '; proxyType = 1; remoteGlobalIDString = ' + watch_target + '; remoteInfo = AikinRecorderWatch;}')
 dependency = add('testDependency', '{isa = PBXTargetDependency; target = ' + app_target + '; targetProxy = ' + proxy + ';}')
 widget_dependency = add('widgetDependency', '{isa = PBXTargetDependency; target = ' + widget_target + '; targetProxy = ' + widget_proxy + ';}')
+watch_dependency = add('watchDependency', '{isa = PBXTargetDependency; target = ' + watch_target + '; targetProxy = ' + watch_proxy + ';}')
 add('widgetTarget', '{isa = PBXNativeTarget; buildConfigurationList = ' + config_lists['widget'] + '; buildPhases = ' + refs([uid('widgetSources'), uid('widgetFrameworks')]) + '; buildRules = (); dependencies = (); name = AikinRecorderLiveActivity; productName = AikinRecorderLiveActivity; productReference = ' + widget_product + '; productType = "com.apple.product-type.app-extension";}')
-add('appTarget', '{isa = PBXNativeTarget; buildConfigurationList = ' + config_lists['app'] + '; buildPhases = ' + refs([uid('appSources'), uid('appFrameworks'), uid('appResources'), uid('embedWidgets')]) + '; buildRules = (); dependencies = ' + refs([widget_dependency]) + '; name = AikinRecorder; productName = AikinRecorder; productReference = ' + app_product + '; productType = "com.apple.product-type.application";}')
+add('watchTarget', '{isa = PBXNativeTarget; buildConfigurationList = ' + config_lists['watch'] + '; buildPhases = ' + refs([uid('watchSources'), uid('watchFrameworks')]) + '; buildRules = (); dependencies = (); name = AikinRecorderWatch; productName = AikinRecorderWatch; productReference = ' + watch_product + '; productType = "com.apple.product-type.application";}')
+add('appTarget', '{isa = PBXNativeTarget; buildConfigurationList = ' + config_lists['app'] + '; buildPhases = ' + refs([uid('appSources'), uid('appFrameworks'), uid('appResources'), uid('embedWidgets'), uid('embedWatch')]) + '; buildRules = (); dependencies = ' + refs([widget_dependency, watch_dependency]) + '; name = AikinRecorder; productName = AikinRecorder; productReference = ' + app_product + '; productType = "com.apple.product-type.application";}')
 add('testTarget', '{isa = PBXNativeTarget; buildConfigurationList = ' + config_lists['test'] + '; buildPhases = ' + refs([uid('testSources'), uid('testFrameworks')]) + '; buildRules = (); dependencies = ' + refs([dependency]) + '; name = AikinRecorderTests; productName = AikinRecorderTests; productReference = ' + test_product + '; productType = "com.apple.product-type.bundle.unit-test";}')
-add('project', '{isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2600;}; buildConfigurationList = ' + config_lists['project'] + '; compatibilityVersion = "Xcode 15.0"; developmentRegion = zh_CN; hasScannedForEncodings = 0; knownRegions = (zh_CN, en, Base); mainGroup = ' + main_group + '; productRefGroup = ' + products + '; projectDirPath = ""; projectRoot = ""; targets = ' + refs([app_target, widget_target, test_target]) + ';}')
+add('project', '{isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2600;}; buildConfigurationList = ' + config_lists['project'] + '; compatibilityVersion = "Xcode 15.0"; developmentRegion = zh_CN; hasScannedForEncodings = 0; knownRegions = (zh_CN, en, Base); mainGroup = ' + main_group + '; productRefGroup = ' + products + '; projectDirPath = ""; projectRoot = ""; targets = ' + refs([app_target, widget_target, watch_target, test_target]) + ';}')
 (PROJECT / 'project.pbxproj').write_text('// !$*UTF8*$!\n{ archiveVersion = 1; classes = {}; objectVersion = 60; objects = {\n' + '\n'.join(f'{key} = {value};' for key, value in objects.items()) + '\n}; rootObject = ' + project_id + ';}\n', encoding='utf-8')
 scheme_dir = PROJECT / 'xcshareddata/xcschemes'
 scheme_dir.mkdir(parents=True, exist_ok=True)

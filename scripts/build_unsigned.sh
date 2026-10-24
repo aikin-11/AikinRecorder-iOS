@@ -6,7 +6,7 @@ mkdir -p build/artifacts
 xcodebuild -version | tee build/artifacts/xcode-version.txt
 set +e
 xcodebuild -project AikinRecorder.xcodeproj -scheme AikinRecorder \
-  -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+  -configuration Release -destination 'generic/platform=iOS' \
   -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY='' build 2>&1 | tee build/artifacts/device-build.log
 status=${PIPESTATUS[0]}
@@ -26,7 +26,7 @@ if codesign -dv "$app" >/dev/null 2>&1; then
 fi
 mkdir -p build/package/Payload
 ditto "$app" build/package/Payload/AikinRecorder.app
-(cd build/package && ditto -c -k --keepParent Payload ../artifacts/AikinRecorder-1.32.0-unsigned.ipa)
-shasum -a 256 build/artifacts/AikinRecorder-1.32.0-unsigned.ipa > build/artifacts/SHA256SUMS.txt
+(cd build/package && ditto -c -k --keepParent Payload ../artifacts/AikinRecorder-1.33.0-unsigned.ipa)
+shasum -a 256 build/artifacts/AikinRecorder-1.33.0-unsigned.ipa > build/artifacts/SHA256SUMS.txt
 echo 'Unsigned IPA created. It must be signed with your certificate and provisioning profile before installation.'
 

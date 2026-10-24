@@ -10,7 +10,6 @@ struct AikinRecorderApp: App {
                 .environment(library)
                 .preferredColorScheme(.dark)
                 .tint(.white)
-                .onAppear { WatchBridge.shared.attach(library) }
                 .onChange(of: scenePhase) { _, phase in
                     if phase != .active { library.keepTranscribingInBackground() }
                 }

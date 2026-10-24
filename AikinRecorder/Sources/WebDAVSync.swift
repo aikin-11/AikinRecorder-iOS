@@ -73,7 +73,7 @@ enum WebDAVSync {
             }
             if !item.transcript.isEmpty {
                 let text = FileManager.default.temporaryDirectory.appendingPathComponent("\(item.id.uuidString).txt")
-                try item.transcript.write(to: text, atomically: true, encoding: .utf8)
+                try Recording.exportText(lines: item.lines, fallback: item.transcript).write(to: text, atomically: true, encoding: .utf8)
                 try await upload(file: text, folder: folder, remoteName: "转写.txt")
             }
             if !item.summary.isEmpty {

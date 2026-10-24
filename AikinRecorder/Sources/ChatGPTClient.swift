@@ -346,7 +346,7 @@ struct ChatGPTSettingsView: View {
                     Text(working ? "等待电脑浏览器确认…" : "未完成").font(.caption).foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("在已经能打开 ChatGPT 的电脑浏览器里打开上面的地址，填入连接码。不用在手机浏览器登录。确认后，会议总结和首页提问使用这个套餐。实时转写仍用 Apple 或阿里云。")
+                Text("在已经能打开 ChatGPT 的电脑浏览器里打开上面的地址，填入连接码。不用在手机浏览器登录。确认后，会议总结和首页提问使用这个套餐。实时转写使用 Apple 本地识别。")
             }
         }
         .navigationTitle("ChatGPT")

@@ -252,7 +252,7 @@ private struct BailianSettingsView: View {
                 Button(working ? "正在测试…" : "测试连接") { test() }.disabled(working)
                 Button("保存") { save(); message = "已保存。" }
             } footer: {
-                Text("实时转写页可选「阿里云模型」。默认模型 qwen-audio-3.1-asr-flash-streaming，音频按 16 kHz PCM 发送。华北2（北京）地址为 wss://dashscope.aliyuncs.com/api-ws/v1/inference。")
+                Text("密钥只保存在这台手机。默认模型 qwen-audio-3.1-asr-flash-streaming，音频按 16 kHz PCM 发送。华北2（北京）地址为 wss://dashscope.aliyuncs.com/api-ws/v1/inference。")
             }
         }
         .navigationTitle("阿里云百炼")

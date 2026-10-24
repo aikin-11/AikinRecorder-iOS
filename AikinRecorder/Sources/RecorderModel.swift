@@ -43,6 +43,7 @@ final class RecorderModel {
     func start(in store: LibraryStore) async {
         guard state == .idle else { return }
         state = .preparing
+        transcriptionEngine = "local"
         let allowed = await AVAudioApplication.requestRecordPermission()
         guard allowed else {
             state = .idle

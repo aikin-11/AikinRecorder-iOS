@@ -239,7 +239,7 @@ final class LibraryStore {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Exports/\(item.id)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent(Recording.cleanTitle(item.title)).appendingPathExtension("txt")
-        try item.transcript.write(to: url, atomically: true, encoding: .utf8)
+        try Recording.exportText(lines: item.lines, fallback: item.transcript).write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 

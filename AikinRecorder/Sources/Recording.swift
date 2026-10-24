@@ -98,6 +98,22 @@ struct Recording: Identifiable, Codable, Hashable {
         summary = text
     }
 
+    static func exportText(lines: [TranscriptCue], fallback: String) -> String {
+        guard !lines.isEmpty else { return fallback }
+        var offset = 0.0
+        var cycleMax = 0.0
+        return lines.map { line in
+            let raw = max(0, line.time)
+            if cycleMax > 30, raw + 20 < cycleMax {
+                offset += cycleMax
+                cycleMax = raw
+            } else if raw > cycleMax {
+                cycleMax = raw
+            }
+            return "\(timeText(raw + offset))    \(line.text)"
+        }.joined(separator: "\n\n")
+    }
+
     static func meetingTitle(at date: Date = .now) -> String {
         _ = date
         return "Aikin会议录音"

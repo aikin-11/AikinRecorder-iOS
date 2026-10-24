@@ -64,6 +64,11 @@ assets = 'AikinRecorderWatch/Assets.xcassets'
 assets_ref = add(assets, '{isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = ' + quote(assets) + '; sourceTree = SOURCE_ROOT;}')
 watch_resources.append(add(assets + ':build', '{isa = PBXBuildFile; fileRef = ' + assets_ref + ';}'))
 watch_refs.append(assets_ref)
+for icon in sorted((ROOT / 'AikinRecorderWatch/BundledIcons').glob('*.png')):
+    relative = icon.relative_to(ROOT).as_posix()
+    ref = add(relative, '{isa = PBXFileReference; lastKnownFileType = image.png; path = ' + quote(relative) + '; sourceTree = SOURCE_ROOT;}')
+    watch_resources.append(add(relative + ':build', '{isa = PBXBuildFile; fileRef = ' + ref + ';}'))
+    watch_refs.append(ref)
 watch_product = add('watchProduct', '{isa = PBXFileReference; explicitFileType = wrapper.application; path = AikinRecorderWatch.app; sourceTree = BUILT_PRODUCTS_DIR;}')
 watch_embed = add('watchEmbed', '{isa = PBXBuildFile; fileRef = ' + watch_product + '; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);};}')
 src_group = add('sourcesGroup', '{isa = PBXGroup; children = ' + refs(source_refs) + '; name = Sources; sourceTree = "<group>";}')
@@ -88,13 +93,13 @@ for owner in ['project', 'app', 'test', 'widget', 'watch']:
         else:
             cfg.update(SWIFT_OPTIMIZATION_LEVEL='-O', DEBUG_INFORMATION_FORMAT='dwarf-with-dsym', SWIFT_COMPILATION_MODE='wholemodule')
         if owner == 'app':
-            cfg.update(PRODUCT_NAME='AikinRecorder', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorder/Resources/Info.plist', GENERATE_INFOPLIST_FILE='NO', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', SUPPORTS_MACCATALYST='NO', CURRENT_PROJECT_VERSION='36', MARKETING_VERSION='1.35.0')
+            cfg.update(PRODUCT_NAME='AikinRecorder', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorder/Resources/Info.plist', GENERATE_INFOPLIST_FILE='NO', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', SUPPORTS_MACCATALYST='NO', CURRENT_PROJECT_VERSION='37', MARKETING_VERSION='1.36.0')
         if owner == 'test':
             cfg.update(PRODUCT_NAME='AikinRecorderTests', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.tests', GENERATE_INFOPLIST_FILE='YES', TEST_HOST='$(BUILT_PRODUCTS_DIR)/AikinRecorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AikinRecorder', BUNDLE_LOADER='$(TEST_HOST)', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @loader_path/Frameworks', TARGETED_DEVICE_FAMILY='1,2')
         if owner == 'widget':
-            cfg.update(PRODUCT_NAME='AikinRecorderLiveActivity', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.liveactivity', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorderLiveActivity/Info.plist', GENERATE_INFOPLIST_FILE='NO', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', CURRENT_PROJECT_VERSION='36', MARKETING_VERSION='1.35.0', APPLICATION_EXTENSION_API_ONLY='YES', CODE_SIGNING_REQUIRED='NO')
+            cfg.update(PRODUCT_NAME='AikinRecorderLiveActivity', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.liveactivity', TARGETED_DEVICE_FAMILY='1,2', INFOPLIST_FILE='AikinRecorderLiveActivity/Info.plist', GENERATE_INFOPLIST_FILE='NO', LD_RUNPATH_SEARCH_PATHS='$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='iphoneos iphonesimulator', CURRENT_PROJECT_VERSION='37', MARKETING_VERSION='1.36.0', APPLICATION_EXTENSION_API_ONLY='YES', CODE_SIGNING_REQUIRED='NO')
         if owner == 'watch':
-            cfg.update(PRODUCT_NAME='AikinRecorderWatch', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.watch', SDKROOT='watchos', TARGETED_DEVICE_FAMILY='4', INFOPLIST_FILE='AikinRecorderWatch/Info.plist', GENERATE_INFOPLIST_FILE='NO', WATCHOS_DEPLOYMENT_TARGET='11.0', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='watchos watchsimulator', CURRENT_PROJECT_VERSION='36', MARKETING_VERSION='1.35.0', CODE_SIGNING_REQUIRED='NO', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon', ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS='YES')
+            cfg.update(PRODUCT_NAME='AikinRecorderWatch', PRODUCT_BUNDLE_IDENTIFIER='app.aikin.recorder.watch', SDKROOT='watchos', TARGETED_DEVICE_FAMILY='4', INFOPLIST_FILE='AikinRecorderWatch/Info.plist', GENERATE_INFOPLIST_FILE='NO', WATCHOS_DEPLOYMENT_TARGET='11.0', SKIP_INSTALL='YES', SUPPORTED_PLATFORMS='watchos watchsimulator', CURRENT_PROJECT_VERSION='37', MARKETING_VERSION='1.36.0', CODE_SIGNING_REQUIRED='NO', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon', ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS='YES')
         configs.append(add(owner + mode, '{isa = XCBuildConfiguration; buildSettings = ' + settings(cfg) + '; name = ' + mode + ';}'))
     config_lists[owner] = add(owner + 'Configs', '{isa = XCConfigurationList; buildConfigurations = ' + refs(configs) + '; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;}')
 

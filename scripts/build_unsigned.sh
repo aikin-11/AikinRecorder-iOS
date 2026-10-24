@@ -20,13 +20,21 @@ fi
 app=build/device/Build/Products/Release-iphoneos/AikinRecorder.app
 test -x "$app/AikinRecorder"
 xcrun lipo "$app/AikinRecorder" -verify_arch arm64
+watch="$app/Watch/AikinRecorderWatch.app"
+test -x "$watch/AikinRecorderWatch"
+icons=$(find "$watch" -name '*.png' | wc -l | tr -d ' ')
+if [ "$icons" -lt 8 ]; then
+  echo "Watch app is missing icon PNGs (found $icons). Refusing to package." >&2
+  find "$watch" -type f | tee build/artifacts/watch-files.txt
+  exit 1
+fi
 if codesign -dv "$app" >/dev/null 2>&1; then
   echo 'Expected an unsigned app, but found a code signature.' >&2
   exit 1
 fi
 mkdir -p build/package/Payload
 ditto "$app" build/package/Payload/AikinRecorder.app
-(cd build/package && ditto -c -k --keepParent Payload ../artifacts/AikinRecorder-1.34.0-unsigned.ipa)
-shasum -a 256 build/artifacts/AikinRecorder-1.34.0-unsigned.ipa > build/artifacts/SHA256SUMS.txt
+(cd build/package && ditto -c -k --keepParent Payload ../artifacts/AikinRecorder-1.35.0-unsigned.ipa)
+shasum -a 256 build/artifacts/AikinRecorder-1.35.0-unsigned.ipa > build/artifacts/SHA256SUMS.txt
 echo 'Unsigned IPA created. It must be signed with your certificate and provisioning profile before installation.'
 

@@ -1,14 +1,22 @@
 {
   "images": [
-    {
-      "filename": "AppIcon.png",
-      "idiom": "universal",
-      "platform": "watchos",
-      "size": "1024x1024"
-    }
+    {"size": "24x24", "idiom": "watch", "scale": "2x", "filename": "Icon-48.png", "role": "notificationCenter", "subtype": "38mm"},
+    {"size": "27.5x27.5", "idiom": "watch", "scale": "2x", "filename": "Icon-55.png", "role": "notificationCenter", "subtype": "42mm"},
+    {"size": "29x29", "idiom": "watch", "scale": "2x", "filename": "Icon-58.png", "role": "companionSettings"},
+    {"size": "29x29", "idiom": "watch", "scale": "3x", "filename": "Icon-87.png", "role": "companionSettings"},
+    {"size": "40x40", "idiom": "watch", "scale": "2x", "filename": "Icon-80.png", "role": "appLauncher", "subtype": "38mm"},
+    {"size": "44x44", "idiom": "watch", "scale": "2x", "filename": "Icon-88.png", "role": "appLauncher", "subtype": "40mm"},
+    {"size": "46x46", "idiom": "watch", "scale": "2x", "filename": "Icon-92.png", "role": "appLauncher", "subtype": "41mm"},
+    {"size": "50x50", "idiom": "watch", "scale": "2x", "filename": "Icon-100.png", "role": "appLauncher", "subtype": "44mm"},
+    {"size": "51x51", "idiom": "watch", "scale": "2x", "filename": "Icon-102.png", "role": "appLauncher", "subtype": "45mm"},
+    {"size": "54x54", "idiom": "watch", "scale": "2x", "filename": "Icon-108.png", "role": "appLauncher", "subtype": "49mm"},
+    {"size": "86x86", "idiom": "watch", "scale": "2x", "filename": "Icon-172.png", "role": "quickLook", "subtype": "38mm"},
+    {"size": "98x98", "idiom": "watch", "scale": "2x", "filename": "Icon-196.png", "role": "quickLook", "subtype": "42mm"},
+    {"size": "108x108", "idiom": "watch", "scale": "2x", "filename": "Icon-216.png", "role": "quickLook", "subtype": "44mm"},
+    {"size": "117x117", "idiom": "watch", "scale": "2x", "filename": "Icon-234.png", "role": "quickLook", "subtype": "45mm"},
+    {"size": "129x129", "idiom": "watch", "scale": "2x", "filename": "Icon-258.png", "role": "quickLook", "subtype": "49mm"},
+    {"size": "1024x1024", "idiom": "watch-marketing", "filename": "Icon-1024.png", "scale": "1x"},
+    {"size": "1024x1024", "idiom": "universal", "platform": "watchos", "filename": "AppIcon.png"}
   ],
-  "info": {
-    "author": "xcode",
-    "version": 1
-  }
+  "info": {"author": "xcode", "version": 1}
 }

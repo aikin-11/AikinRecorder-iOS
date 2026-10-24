@@ -20,6 +20,7 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate {
     @Published var elapsed = 0.0
     @Published var status = "可以开始录音"
     @Published var files: [URL] = []
+    @Published var levels: [CGFloat] = Array(repeating: 0.15, count: 12)
     private var audio: AVAudioRecorder?
     private var started: Date?
     private var timer: Timer?
@@ -50,7 +51,9 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate {
                 AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
             ]
             audio = try AVAudioRecorder(url: url, settings: settings)
+            audio?.isMeteringEnabled = true
             audio?.record()
+            levels = Array(repeating: 0.15, count: 12)
             started = .now
             recording = true
             status = "正在录音"
@@ -59,6 +62,11 @@ final class WatchRecorder: NSObject, ObservableObject, WCSessionDelegate {
                 Task { @MainActor in
                     guard let self, let started = self.started else { return }
                     self.elapsed = Date().timeIntervalSince(started)
+                    self.audio?.updateMeters()
+                    let power = self.audio?.averagePower(forChannel: 0) ?? -50
+                    let level = CGFloat(min(1, max(0.08, (power + 50) / 50)))
+                    self.levels.removeFirst()
+                    self.levels.append(level)
                 }
             }
         } catch {
@@ -116,6 +124,8 @@ struct WatchHome: View {
             Text(recorder.recording ? time(recorder.elapsed) : recorder.status)
                 .font(.caption2)
                 .multilineTextAlignment(.center)
+            LevelChart(levels: recorder.levels, active: recorder.recording)
+                .frame(height: 36)
             Button(recorder.recording ? "停止" : "录音") { recorder.toggle() }
                 .tint(recorder.recording ? .red : .yellow)
             if !recorder.files.isEmpty {
@@ -131,5 +141,21 @@ struct WatchHome: View {
     private func time(_ value: TimeInterval) -> String {
         let seconds = Int(value)
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+private struct LevelChart: View {
+    let levels: [CGFloat]
+    let active: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
+                Capsule()
+                    .fill(active ? Color.yellow : Color.gray.opacity(0.45))
+                    .frame(width: 4, height: max(4, 36 * level))
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 }

@@ -14,9 +14,9 @@ struct SettingsView: View {
                 Section {
                     NavigationLink("ChatGPT") { ChatGPTSettingsView() }
                     NavigationLink("DeepSeek") { DeepSeekSettingsView() }
-                    NavigationLink("阿里云百炼") { BailianSettingsView() }
+                    NavigationLink("自定义模型") { CustomModelSettingsView() }
                 } header: { Text("模型服务") } footer: {
-                    Text("ChatGPT 用登录使用套餐，不填 API Key。DeepSeek 和百炼仍用密钥，只保存在这台手机。")
+                    Text("ChatGPT 用登录使用套餐，不填 API Key。DeepSeek 和自定义模型使用密钥，只保存在这台手机。")
                 }
                 Section {
                     NavigationLink("我的记忆") { MeetingMemoryView() }
@@ -231,10 +231,10 @@ private struct DeepSeekSettingsView: View {
     }
 }
 
-private struct BailianSettingsView: View {
-    @State private var apiKey = BailianSettings.apiKey
-    @State private var model = BailianSettings.model
-    @State private var endpoint = BailianSettings.endpoint
+private struct CustomModelSettingsView: View {
+    @State private var apiKey = CustomModelSettings.apiKey
+    @State private var model = CustomModelSettings.model
+    @State private var baseURL = CustomModelSettings.baseURL
     @State private var message: String?
     @State private var working = false
     var body: some View {
@@ -246,16 +246,16 @@ private struct BailianSettingsView: View {
                 TextField("模型", text: $model)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                TextField("WebSocket 地址", text: $endpoint, axis: .vertical)
+                TextField("接口地址", text: $baseURL, axis: .vertical)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button(working ? "正在测试…" : "测试连接") { test() }.disabled(working)
                 Button("保存") { save(); message = "已保存。" }
             } footer: {
-                Text("密钥只保存在这台手机。默认模型 qwen-audio-3.1-asr-flash-streaming，音频按 16 kHz PCM 发送。华北2（北京）地址为 wss://dashscope.aliyuncs.com/api-ws/v1/inference。")
+                Text("按 OpenAI 兼容格式发送。测试会请求 /v1/models。会议总结发送到 /v1/chat/completions，模型名需与接收端一致。密钥只保存在这台手机。")
             }
         }
-        .navigationTitle("阿里云百炼")
+        .navigationTitle("自定义模型")
         .navigationBarTitleDisplayMode(.inline)
         .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("好") { message = nil }
@@ -263,9 +263,11 @@ private struct BailianSettingsView: View {
     }
 
     private func save() {
-        BailianSettings.apiKey = apiKey
-        BailianSettings.model = model
-        BailianSettings.endpoint = endpoint
+        CustomModelSettings.apiKey = apiKey
+        CustomModelSettings.model = model
+        CustomModelSettings.baseURL = baseURL
+        baseURL = CustomModelSettings.baseURL
+        model = CustomModelSettings.model
     }
 
     private func test() {
@@ -273,8 +275,10 @@ private struct BailianSettingsView: View {
         working = true
         Task {
             defer { working = false }
-            do { try await BailianSettings.test(); message = "阿里云百炼连接成功。" }
-            catch { message = error.localizedDescription }
+            do {
+                let name = try await CustomModelClient.test()
+                message = "已连上自定义模型，当前模型 \(name)。"
+            } catch { message = error.localizedDescription }
         }
     }
 }

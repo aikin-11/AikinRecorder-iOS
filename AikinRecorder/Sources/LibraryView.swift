@@ -11,6 +11,7 @@ struct LibraryView: View {
     @State private var answerSources: [Recording] = []
     @State private var showingAnswer = false
     @State private var showingRecorder = false
+    @State private var autoStartRecording = false
     @State private var showingSettings = false
     @State private var importing = false
     @State private var errorMessage: String?
@@ -80,7 +81,7 @@ struct LibraryView: View {
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 10) {
+                VStack(spacing: 10) {
                     HStack(spacing: 8) {
                         Button { engine = engine.next } label: {
                             HStack(spacing: 4) {
@@ -98,36 +99,49 @@ struct LibraryView: View {
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .glassEffect(.regular, in: .capsule)
-                    Button { showingTodos = true } label: {
-                        Image(systemName: "checklist")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 44, height: 44)
+                    HStack {
+                        Button { showingTodos = true } label: {
+                            Image(systemName: "checklist")
+                                .font(.body.weight(.semibold))
+                                .frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 44, height: 44)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                        .accessibilityLabel("待办")
+                        Spacer()
+                        Button {
+                            autoStartRecording = true
+                            showingRecorder = true
+                        } label: {
+                            Image(systemName: "mic.fill")
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(.black)
+                                .frame(width: 68, height: 68)
+                                .background(.white, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("开始录音")
+                        Spacer()
+                        Button { importAudio() } label: {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.body.weight(.semibold))
+                                .frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 44, height: 44)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                        .disabled(importing)
+                        .accessibilityLabel("导入外部音频")
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: 44, height: 44)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .accessibilityLabel("待办")
-                    Menu {
-                        Button("录音实时转写", systemImage: "mic") { showingRecorder = true }
-                        Button("导入外部音频", systemImage: "square.and.arrow.down") { importAudio() }
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 44, height: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: 44, height: 44)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .disabled(importing)
-                    .accessibilityLabel("新建")
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 20)
                 .padding(.top, 8)
-                .padding(.bottom, 8)
+                .padding(.bottom, 6)
                 .background(Color.black)
             }
             .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item, initialQuery: query) }
-            .sheet(isPresented: $showingRecorder) { RecorderView() }
+            .sheet(isPresented: $showingRecorder, onDismiss: { autoStartRecording = false }) { RecorderView(autoStart: autoStartRecording) }
             .overlay { if importing { ProgressView("正在导入…").padding(24).glassEffect(in: .rect(cornerRadius: 20)) } }
             .overlay {
                 GeometryReader { geo in

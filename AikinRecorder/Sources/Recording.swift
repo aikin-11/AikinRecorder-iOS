@@ -23,16 +23,17 @@ struct Recording: Identifiable, Codable, Hashable {
     var summary: String
     var summaryDeepSeek: String
     var summaryChatGPT: String
+    var summaryCustom: String
     var marks: [RecordingMark]
     var transcribedThrough: TimeInterval
     var sourceHash: String
     var sourceBytes: Int64
 
     enum CodingKeys: String, CodingKey {
-        case id, title, fileName, createdAt, duration, transcript, lines, summary, summaryDeepSeek, summaryChatGPT, marks, transcribedThrough, sourceHash, sourceBytes
+        case id, title, fileName, createdAt, duration, transcript, lines, summary, summaryDeepSeek, summaryChatGPT, summaryCustom, marks, transcribedThrough, sourceHash, sourceBytes
     }
 
-    init(id: UUID, title: String, fileName: String, createdAt: Date, duration: TimeInterval, transcript: String, lines: [TranscriptCue] = [], summary: String = "", summaryDeepSeek: String = "", summaryChatGPT: String = "", marks: [RecordingMark] = [], transcribedThrough: TimeInterval = 0, sourceHash: String = "", sourceBytes: Int64 = 0) {
+    init(id: UUID, title: String, fileName: String, createdAt: Date, duration: TimeInterval, transcript: String, lines: [TranscriptCue] = [], summary: String = "", summaryDeepSeek: String = "", summaryChatGPT: String = "", summaryCustom: String = "", marks: [RecordingMark] = [], transcribedThrough: TimeInterval = 0, sourceHash: String = "", sourceBytes: Int64 = 0) {
         self.id = id
         self.title = title
         self.fileName = fileName
@@ -43,6 +44,7 @@ struct Recording: Identifiable, Codable, Hashable {
         self.summary = summary
         self.summaryDeepSeek = summaryDeepSeek
         self.summaryChatGPT = summaryChatGPT
+        self.summaryCustom = summaryCustom
         self.marks = marks
         self.transcribedThrough = transcribedThrough
         self.sourceHash = sourceHash
@@ -61,7 +63,8 @@ struct Recording: Identifiable, Codable, Hashable {
         summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
         summaryDeepSeek = try container.decodeIfPresent(String.self, forKey: .summaryDeepSeek) ?? ""
         summaryChatGPT = try container.decodeIfPresent(String.self, forKey: .summaryChatGPT) ?? ""
-        if summaryDeepSeek.isEmpty, summaryChatGPT.isEmpty, !summary.isEmpty { summaryDeepSeek = summary }
+        summaryCustom = try container.decodeIfPresent(String.self, forKey: .summaryCustom) ?? ""
+        if summaryDeepSeek.isEmpty, summaryChatGPT.isEmpty, summaryCustom.isEmpty, !summary.isEmpty { summaryDeepSeek = summary }
         marks = try container.decodeIfPresent([RecordingMark].self, forKey: .marks) ?? []
         transcribedThrough = try container.decodeIfPresent(TimeInterval.self, forKey: .transcribedThrough) ?? 0
         sourceHash = try container.decodeIfPresent(String.self, forKey: .sourceHash) ?? ""
@@ -80,21 +83,30 @@ struct Recording: Identifiable, Codable, Hashable {
         try container.encode(summary, forKey: .summary)
         try container.encode(summaryDeepSeek, forKey: .summaryDeepSeek)
         try container.encode(summaryChatGPT, forKey: .summaryChatGPT)
+        try container.encode(summaryCustom, forKey: .summaryCustom)
         try container.encode(marks, forKey: .marks)
         try container.encode(transcribedThrough, forKey: .transcribedThrough)
         try container.encode(sourceHash, forKey: .sourceHash)
         try container.encode(sourceBytes, forKey: .sourceBytes)
     }
 
-    var hasSummary: Bool { !summaryDeepSeek.isEmpty || !summaryChatGPT.isEmpty }
+    var hasSummary: Bool { !summaryDeepSeek.isEmpty || !summaryChatGPT.isEmpty || !summaryCustom.isEmpty }
 
-    func summaryText(chatgpt: Bool) -> String {
-        if chatgpt { return summaryChatGPT }
-        return summaryDeepSeek.isEmpty && summaryChatGPT.isEmpty ? summary : summaryDeepSeek
+    func summaryText(engine: String) -> String {
+        switch engine {
+        case "chatgpt": return summaryChatGPT
+        case "custom": return summaryCustom
+        default:
+            return summaryDeepSeek.isEmpty && summaryChatGPT.isEmpty && summaryCustom.isEmpty ? summary : summaryDeepSeek
+        }
     }
 
-    mutating func storeSummary(_ text: String, chatgpt: Bool) {
-        if chatgpt { summaryChatGPT = text } else { summaryDeepSeek = text }
+    mutating func storeSummary(_ text: String, engine: String) {
+        switch engine {
+        case "chatgpt": summaryChatGPT = text
+        case "custom": summaryCustom = text
+        default: summaryDeepSeek = text
+        }
         summary = text
     }
 

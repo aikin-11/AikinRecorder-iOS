@@ -182,8 +182,8 @@ struct RecordingDetailView: View {
         .sheet(isPresented: $showingSummary, onDismiss: {
             if titleReady { titleReady = false; offeringTitle = true }
         }) {
-            SummarySheet(recordingID: item.id, deepSeek: item.summaryText(chatgpt: false), chatGPT: item.summaryText(chatgpt: true), progress: summaryProgress, working: summarizing, engine: $summaryEngine, regenerate: { summarize() }) {
-                do { SystemPresenter.share(try store.shareSummary(item, text: item.summaryText(chatgpt: summaryEngine == .chatgpt))) }
+            SummarySheet(recordingID: item.id, deepSeek: item.summaryText(engine: "deepseek"), chatGPT: item.summaryText(engine: "chatgpt"), custom: item.summaryText(engine: "custom"), progress: summaryProgress, working: summarizing, engine: $summaryEngine, regenerate: { summarize() }) {
+                do { SystemPresenter.share(try store.shareSummary(item, text: item.summaryText(engine: summaryEngine.rawValue))) }
                 catch { errorMessage = error.localizedDescription }
             }
         }
@@ -297,7 +297,7 @@ struct RecordingDetailView: View {
                 let text = try await MeetingAI.summarize(transcript: transcript, engine: summaryEngine) { value in
                     Task { @MainActor in summaryProgress = value }
                 }
-                item.storeSummary(text, chatgpt: summaryEngine == .chatgpt)
+                item.storeSummary(text, engine: summaryEngine.rawValue)
                 summaryProgress = 1
                 save()
                 let theme = DeepSeekClient.theme(from: text)
@@ -343,6 +343,7 @@ private struct SummarySheet: View {
     let recordingID: UUID
     let deepSeek: String
     let chatGPT: String
+    let custom: String
     let progress: Double
     let working: Bool
     @Binding var engine: AnswerEngine
@@ -352,7 +353,13 @@ private struct SummarySheet: View {
     @Environment(LibraryStore.self) private var store
     @State private var pickingTodos = false
 
-    private var summary: String { engine == .chatgpt ? chatGPT : deepSeek }
+    private var summary: String {
+        switch engine {
+        case .chatgpt: return chatGPT
+        case .custom: return custom
+        default: return deepSeek
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -360,6 +367,7 @@ private struct SummarySheet: View {
                 Picker("模型", selection: $engine) {
                     Text("DeepSeek").tag(AnswerEngine.deepseek)
                     Text("ChatGPT").tag(AnswerEngine.chatgpt)
+                    Text("自定义").tag(AnswerEngine.custom)
                 }
                 .pickerStyle(.segmented)
                 .disabled(working)

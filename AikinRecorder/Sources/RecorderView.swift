@@ -3,6 +3,7 @@ import SwiftUI
 struct RecorderView: View {
     @Environment(LibraryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    var autoStart = false
     @State private var model = RecorderModel()
     @State private var preparingTask: Task<Void, Never>?
     @State private var confirmingClose = false
@@ -94,7 +95,11 @@ struct RecorderView: View {
             } message: { Text(model.errorMessage ?? "") }
         }
         .preferredColorScheme(.dark).tint(.white)
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+        .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = true
+            guard autoStart, model.state == .idle, preparingTask == nil else { return }
+            preparingTask = Task { await model.start(in: store) }
+        }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = model.state != .recording && model.state != .paused }
     }
 

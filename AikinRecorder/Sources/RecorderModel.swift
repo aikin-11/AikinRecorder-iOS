@@ -19,8 +19,6 @@ final class RecorderModel {
     private let engine = AVAudioEngine()
     private var capture: AudioCapture?
     private var speech: SpeechSession?
-    private var bailian: BailianRealtime?
-    private let downsampler = PCMDownsampler()
     private var item: Recording?
     private var timer: Task<Void, Never>?
     private var startTime: Date?
@@ -33,6 +31,8 @@ final class RecorderModel {
     var marks: [RecordingMark] = []
     private var markObserver: NSObjectProtocol?
     private var markFlashUntil = Date.distantPast
+    private var aliveTask: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundObserver: NSObjectProtocol?
 
     var transcript: String {
         lines.filter { !$0.provisional }.map(\.text).joined(separator: "\n")
@@ -56,21 +56,7 @@ final class RecorderModel {
             try audioSession.setActive(true)
             var format: AVAudioFormat?
             var builder: AsyncStream<AnalyzerInput>.Continuation?
-            if liveTranscription && transcriptionEngine == "bailian" {
-                let service = BailianRealtime()
-                service.onText = { [weak self] text, finished in
-                    Task { @MainActor in self?.applyBailian(text, finished: finished) }
-                }
-                service.onStatus = { [weak self] message in
-                    Task { @MainActor in
-                        guard let self else { return }
-                        if message == "额度不足" { await self.switchToApple() }
-                        else { self.status = message }
-                    }
-                }
-                try await service.start()
-                bailian = service
-            } else if liveTranscription {
+            if liveTranscription {
                 let service = SpeechSession()
                 service.clock = { [weak self] in self?.elapsed ?? 0 }
                 service.onLines = { [weak self] lines in
@@ -101,15 +87,9 @@ final class RecorderModel {
             let input = engine.inputNode
             let inputFormat = input.outputFormat(forBus: 0)
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw RecorderError.message("麦克风当前不可用，请检查音频设备。") }
-            let pcmSink = bailian.map { BailianPCMSink(downsampler: downsampler, service: $0) }
             let pipeline = try AudioCapture(url: store.audioURL(for: draft), inputFormat: inputFormat,
                 analyzerFormat: format, continuation: builder,
                 onLevel: { [levelMeter] value in levelMeter.set(value) },
-                onPCM: pcmSink.map { sink in
-                    { samples, count, rate in
-                        sink.service.appendPCM(sink.downsampler.convert(samples, count: count, sampleRate: rate))
-                    }
-                },
                 onFailure: { [weak self, weak store] message in Task { @MainActor in
                     self?.errorMessage = "音频写入失败：\(message)"
                     if let self, let store { await self.finish(in: store) }
@@ -122,6 +102,10 @@ final class RecorderModel {
             state = .recording
             startTime = .now
             UIApplication.shared.isIdleTimerDisabled = true
+            holdAlive()
+            backgroundObserver = NotificationCenter.default.addObserver(forName: .aikinEnterBackground, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.reinforceSession() }
+            }
             RecordingActivity.start(title: Recording.cleanTitle(title), elapsed: 0)
             markObserver = NotificationCenter.default.addObserver(forName: .aikinRecordingMark, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.addMark() }
@@ -131,17 +115,35 @@ final class RecorderModel {
                     try? await Task.sleep(for: .seconds(1))
                     guard let self else { return }
                     if self.state == .recording, let start = self.startTime { self.elapsed = self.elapsedBeforePause + Date().timeIntervalSince(start) }
+                    if Int(self.elapsed) % 20 == 0 { self.holdAlive() }
                     self.pushActivity(force: false)
                 }
             }
             interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification,
-                object: nil, queue: .main) { [weak self, weak store] notification in
-                    guard let kind = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-                          kind == AVAudioSession.InterruptionType.began.rawValue else { return }
+                object: nil, queue: .main) { [weak self] notification in
+                    let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                    let options = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
                     Task { @MainActor in
-                        guard let self, let store, self.hasUnsavedRecording else { return }
-                        self.status = "音频被系统中断，正在保存录音。"
-                        await self.finish(in: store)
+                        guard let self, self.state == .recording || self.state == .paused else { return }
+                        if raw == AVAudioSession.InterruptionType.began.rawValue {
+                            if self.state == .recording {
+                                self.engine.pause()
+                                self.elapsedBeforePause = self.elapsed
+                                self.startTime = nil
+                                self.state = .paused
+                            }
+                            self.status = "系统短暂占用了麦克风，录音还在。结束后会自动继续。"
+                            self.reinforceSession()
+                            self.pushActivity(force: true)
+                        } else if options & AVAudioSession.InterruptionOptions.shouldResume.rawValue != 0, self.state == .paused {
+                            try? AVAudioSession.sharedInstance().setActive(true)
+                            try? self.engine.start()
+                            self.startTime = .now
+                            self.state = .recording
+                            self.status = "已继续录音"
+                            self.reinforceSession()
+                            self.pushActivity(force: true)
+                        }
                     }
                 }
         } catch {
@@ -151,8 +153,6 @@ final class RecorderModel {
             capture = nil
             await speech?.cancel()
             speech = nil
-            await bailian?.finish()
-            bailian = nil
             if let item { try? store.remove(item) }
             item = nil
             state = .idle
@@ -191,10 +191,9 @@ final class RecorderModel {
         capture = nil
         await speech?.finishLive()
         speech = nil
-        await bailian?.finish()
-        bailian = nil
         if let observer = interruptionObserver { NotificationCenter.default.removeObserver(observer); interruptionObserver = nil }
         if let observer = markObserver { NotificationCenter.default.removeObserver(observer); markObserver = nil }
+        if let observer = backgroundObserver { NotificationCenter.default.removeObserver(observer); backgroundObserver = nil }
         if var item {
             item.title = Recording.cleanTitle(title)
             item.transcript = transcript
@@ -210,6 +209,45 @@ final class RecorderModel {
         UIApplication.shared.isIdleTimerDisabled = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         state = .saved
+        endAlive()
+    }
+
+    private func reinforceSession() {
+        guard state == .recording || state == .paused else { return }
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
+        try? session.setActive(true)
+        if state == .recording, !engine.isRunning {
+            startTime = .now
+            try? engine.start()
+        }
+        holdAlive()
+    }
+
+    private func holdAlive() {
+        guard state == .recording || state == .paused || state == .saving else { return }
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
+        try? session.setActive(true)
+        if state == .recording, !engine.isRunning { try? engine.start() }
+        let previous = aliveTask
+        aliveTask = UIApplication.shared.beginBackgroundTask(withName: "KeepRecording") { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                let expired = self.aliveTask
+                if self.state == .recording || self.state == .paused { self.reinforceSession() }
+                if expired != .invalid { UIApplication.shared.endBackgroundTask(expired) }
+                if self.aliveTask == expired { self.aliveTask = .invalid }
+            }
+        }
+        if previous != .invalid, previous != aliveTask { UIApplication.shared.endBackgroundTask(previous) }
+    }
+
+    private func endAlive() {
+        if aliveTask != .invalid {
+            UIApplication.shared.endBackgroundTask(aliveTask)
+            aliveTask = .invalid
+        }
     }
 
     private func pushActivity(force: Bool) {
@@ -220,48 +258,6 @@ final class RecorderModel {
         let snippet = lines.last?.text ?? (state == .paused ? "已暂停" : "正在聆听…")
         let captions = lines.suffix(4).map { String($0.text.prefix(40)) }
         RecordingActivity.update(elapsed: elapsed, paused: state == .paused, snippet: String(snippet.prefix(80)), captions: captions.isEmpty ? [String(snippet.prefix(40))] : captions, levels: activityLevels, markedUntil: markFlashUntil)
-    }
-
-    private func switchToApple() async {
-        guard speech == nil else { return }
-        transcriptionEngine = "local"
-        status = "阿里云额度不足，已改用 Apple 模型"
-        await bailian?.finish()
-        bailian = nil
-        let service = SpeechSession()
-        service.clock = { [weak self] in self?.elapsed ?? 0 }
-        service.onLines = { [weak self] lines in
-            Task { @MainActor in
-                self?.lines = lines
-                self?.pushActivity(force: false)
-            }
-        }
-        service.onStatus = { [weak self] message in
-            Task { @MainActor in self?.status = message }
-        }
-        do {
-            let prepared = try await service.startLive(localeID: localeID)
-            speech = service
-            capture?.attachAnalyzer(format: prepared.0, continuation: prepared.1)
-        } catch {
-            status = "已停止阿里云转写，Apple 模型暂不可用"
-        }
-    }
-
-    private func applyBailian(_ text: String, finished: Bool) {
-        let spoken = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !spoken.isEmpty else { return }
-        if let index = lines.indices.last {
-            let previous = lines[index].text
-            if lines[index].provisional || spoken.hasPrefix(previous) || previous.hasPrefix(spoken) {
-                lines[index].text = spoken
-                lines[index].provisional = !finished
-                pushActivity(force: finished)
-                return
-            }
-        }
-        lines.append(TranscriptLine(time: elapsed, text: spoken, provisional: !finished))
-        pushActivity(force: finished)
     }
 
     func addMark() {

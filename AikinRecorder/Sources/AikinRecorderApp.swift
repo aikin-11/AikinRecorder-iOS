@@ -11,7 +11,10 @@ struct AikinRecorderApp: App {
                 .preferredColorScheme(.dark)
                 .tint(.white)
                 .onChange(of: scenePhase) { _, phase in
-                    if phase != .active { library.keepTranscribingInBackground() }
+                    if phase != .active {
+                        library.keepTranscribingInBackground()
+                        NotificationCenter.default.post(name: .aikinEnterBackground, object: nil)
+                    }
                 }
                 .task {
                     while !Task.isCancelled {

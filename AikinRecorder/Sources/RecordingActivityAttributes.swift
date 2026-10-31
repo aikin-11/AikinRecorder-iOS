@@ -4,6 +4,7 @@ import Foundation
 
 extension Notification.Name {
     static let aikinRecordingMark = Notification.Name("aikin.recording.mark")
+    static let aikinEnterBackground = Notification.Name("aikin.enter.background")
 }
 
 struct AddMarkIntent: LiveActivityIntent {

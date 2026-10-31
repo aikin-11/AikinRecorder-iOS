@@ -136,8 +136,8 @@ struct RecorderView: View {
                             .foregroundStyle(markLit ? Color.yellow : Color.white)
                             .padding(.horizontal, 16).padding(.vertical, 16)
                     }.buttonStyle(.glass)
-                    Button { titleDraft = model.title; showingRename = true } label: {
-                        Label("保存", systemImage: "stop.fill").padding(.horizontal, 16).padding(.vertical, 16)
+                    Button { Task { await model.finish(in: store); dismiss() } } label: {
+                        Label("完成", systemImage: "stop.fill").padding(.horizontal, 16).padding(.vertical, 16)
                     }.buttonStyle(.glass)
                 }
             }

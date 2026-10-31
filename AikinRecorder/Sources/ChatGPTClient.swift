@@ -295,7 +295,7 @@ enum MeetingAI {
             let input = "用户长期记忆：\n\(MeetingMemory.prompt)\n\n会议转写：\n\(String(transcript.prefix(24_000)))"
             return try await ChatGPTClient.complete(instructions: instructions, input: input, onProgress: onProgress)
         case .custom:
-            return try await CustomModelClient.summarize(transcript: transcript, onProgress: onProgress)
+            return try await CustomModelClient.summarize(kind: .minutes, transcript: transcript, meetingDate: "", onProgress: onProgress)
         }
     }
 

@@ -45,27 +45,20 @@ enum CustomModelClient {
         return CustomModelSettings.model
     }
 
-    static func reviseMemory(_ note: String) async throws -> String {
-        try await complete(messages: [
-            ["role": "system", "content": "你维护一份给会议助手用的记忆。根据用户的新说明修正错误、补充事实，输出更新后的完整记忆。用简短中文，不要寒暄。"],
-            ["role": "user", "content": "当前记忆：\n\(MeetingMemory.text)\n\n新说明：\n\(note)"]
-        ], onProgress: { _ in })
-    }
-
-    static func summarize(transcript: String, onProgress: @escaping (Double) -> Void) async throws -> String {
+    static func summarize(kind: SummaryKind, transcript: String, meetingDate: String, onProgress: @escaping (Double) -> Void) async throws -> String {
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw RecorderError.message("这条录音还没有转写文字，无法总结。")
         }
-        let instructions = "你是会议记录助手。第一行必须是「主题：」加不超过16个字的内容主题。然后用中文整理结论、待办和关键发言。不要编造。必须遵守用户长期记忆里的人物、项目和偏好。"
-        let memory = "以下是用户的长期记忆，之后的每次会议总结都必须遵守。涉及人物、偏好、项目和已确认事实时以此为准，不要忽略：\n\(MeetingMemory.prompt)"
+        let spoken = String(transcript.prefix(500_000))
+        let prompt = kind == .minutes ? SummaryPrompts.minutes(transcript: spoken) : SummaryPrompts.tasks(transcript: spoken, meetingDate: meetingDate)
         let text = try await complete(messages: [
-            ["role": "system", "content": instructions],
-            ["role": "system", "content": memory],
-            ["role": "user", "content": String(transcript.prefix(700_000))]
+            ["role": "user", "content": prompt]
         ], onProgress: onProgress)
-        guard !text.isEmpty else { throw RecorderError.message("自定义模型没有返回总结。") }
+        guard !text.isEmpty else { throw RecorderError.message("Aikin 没有返回总结。") }
         return text
     }
+
+    enum SummaryKind { case minutes, tasks }
 
     static func ask(question: String, recordings: [Recording], onProgress: @escaping (Double) -> Void) async throws -> (answer: String, sources: [UUID]) {
         guard !recordings.isEmpty else { throw RecorderError.message("还没有录音可以提问。") }
@@ -73,10 +66,10 @@ enum CustomModelClient {
             let date = item.createdAt.formatted(date: .numeric, time: .shortened)
             return "[\(item.id.uuidString)] \(date) 时长\(Int(item.duration))秒 字数\(item.transcript.count) 标题：\(item.title)\n总结：\(item.summary.prefix(300))\n转写：\(item.transcript.prefix(1_200))"
         }.joined(separator: "\n\n")
-        let instructions = "你是会议资料助手。先理解问题，再根据每条录音的日期、时长、字数、标题、总结和转写作统计或查找。必须遵守用户长期记忆里的人物、项目和偏好。先写答案，最后一行以「引用：」开头列出用到的 UUID，逗号分隔。"
+        let instructions = "你是会议资料助手。先理解问题，再根据每条录音的日期、时长、字数、标题、总结和转写作统计或查找。先写答案，最后一行以「引用：」开头列出用到的 UUID，逗号分隔。"
         let content = try await complete(messages: [
             ["role": "system", "content": instructions],
-            ["role": "user", "content": "用户长期记忆：\n\(MeetingMemory.prompt)\n\n问题：\(question)\n\n\(String(corpus.prefix(700_000)))"]
+            ["role": "user", "content": "问题：\(question)\n\n\(String(corpus.prefix(500_000)))"]
         ], onProgress: onProgress)
         var answer = content
         var sources: [UUID] = []

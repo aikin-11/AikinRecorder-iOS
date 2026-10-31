@@ -8,8 +8,7 @@ struct RecordingDetailView: View {
     @State private var errorMessage: String?
     @State private var showingRename = false
     @State private var titleDraft = ""
-    @State private var summarizing = false
-    @State private var summaryProgress = 0.0
+    @State private var summaryKind = 0
     @State private var showingTranscript = false
     @State private var preparedView = false
     @State private var offeringTitle = false
@@ -152,9 +151,10 @@ struct RecordingDetailView: View {
                     Button("查找", systemImage: "magnifyingglass") { showingFind = true }
                     Button("标记说明", systemImage: "star") { showingMarks = true }.disabled(item.marks.isEmpty)
                     Button("导出总结", systemImage: "doc.richtext") {
-                        do { SystemPresenter.share(try store.shareSummary(item, text: item.summaryText(engine: "custom"))) }
+                        let text = summaryKind == 0 ? minutesText : item.summaryActions
+                        do { SystemPresenter.share(try store.shareSummary(item, text: text)) }
                         catch { errorMessage = error.localizedDescription }
-                    }.disabled(item.summaryText(engine: "custom").isEmpty)
+                    }.disabled((summaryKind == 0 ? minutesText : item.summaryActions).isEmpty)
                     Button(item.hasSummary ? "查看总结" : "会议总结", systemImage: "sparkles") { openSummary() }
                 } label: { Image(systemName: "ellipsis") }.accessibilityLabel("更多操作")
             }
@@ -210,6 +210,7 @@ struct RecordingDetailView: View {
             findText = initialQuery
             UIApplication.shared.isIdleTimerDisabled = store.transcribingID == item.id
         }
+        .onChange(of: store.summaryTick) { pullSummary() }
         .onChange(of: store.transcribingID) { UIApplication.shared.isIdleTimerDisabled = store.transcribingID == item.id }
         .onChange(of: store.recordings.first { $0.id == item.id }?.transcript) {
             if store.transcribingID == item.id, let latest = store.recordings.first(where: { $0.id == item.id }) {
@@ -318,22 +319,34 @@ struct RecordingDetailView: View {
         return item.summaryDeepSeek.isEmpty ? item.summaryChatGPT : item.summaryDeepSeek
     }
 
-    private var summaryTheme: String {
-        let lines = visibleSummary.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
-        guard let line = lines.first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("主题：") }) else { return "" }
-        let stripped = line.replacingOccurrences(of: "主题：", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "#* "))
-        return String(stripped.prefix(16))
+    private var summaryTheme: String { Recording.subjectTitle(from: minutesText) }
+
+    private var minutesText: String {
+        if !item.summaryCustom.isEmpty { return item.summaryCustom }
+        if item.summaryActions.isEmpty { return visibleSummary }
+        return ""
     }
+
+    private var shownSummary: String { summaryKind == 0 ? minutesText : item.summaryActions }
 
     private var summaryPage: some View {
         VStack(spacing: 0) {
-            if summarizing {
-                ProgressView(value: summaryProgress) { Text("正在生成会议总结…").font(.footnote) }
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
+            Picker("总结", selection: $summaryKind) {
+                Text("会议纪要").tag(0)
+                Text("待办清单").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            if store.summarizingID == item.id {
+                ProgressView(value: store.summaryProgress) {
+                    Text(store.summaryProgress < 0.5 ? "正在整理会议纪要…" : "正在整理待办清单…").font(.footnote)
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
             }
             ScrollView {
-                MarkdownSummary(text: visibleSummary.isEmpty ? (summarizing ? "正在整理…" : "还没有总结。") : visibleSummary)
+                MarkdownSummary(text: shownSummary.isEmpty ? (store.summarizingID == item.id ? "正在整理…" : "还没有这份总结。") : shownSummary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .padding(.bottom, 72)
@@ -342,34 +355,27 @@ struct RecordingDetailView: View {
                 Button("查看转写") { showingTranscript = true }
                     .buttonStyle(.bordered)
                 Spacer()
-                Button(visibleSummary.isEmpty ? "生成总结" : "重新总结") { summarize() }
+                Button(item.hasSummary ? "重新总结" : "生成总结") { summarize() }
                     .buttonStyle(.borderedProminent)
                     .tint(.yellow)
                     .foregroundStyle(.black)
-                    .disabled(summarizing)
+                    .disabled(store.summarizingID == item.id)
             }
             .padding(16)
         }
     }
 
+    private func pullSummary() {
+        guard let latest = store.recordings.first(where: { $0.id == item.id }) else { return }
+        item.title = latest.title
+        item.summary = latest.summary
+        item.summaryCustom = latest.summaryCustom
+        item.summaryActions = latest.summaryActions
+    }
+
     private func summarize() {
-        summarizing = true
-        summaryProgress = 0
         showingTranscript = false
-        let transcript = item.transcript
-        Task {
-            defer { summarizing = false }
-            do {
-                let text = try await MeetingAI.summarize(transcript: transcript, engine: .custom) { value in
-                    Task { @MainActor in summaryProgress = value }
-                }
-                item.storeSummary(text, engine: "custom")
-                summaryProgress = 1
-                save()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
+        store.beginMeetingSummary(item.id, replacing: true)
     }
 
     private var transcriptButtonTitle: String {

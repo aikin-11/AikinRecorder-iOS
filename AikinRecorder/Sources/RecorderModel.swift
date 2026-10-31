@@ -204,6 +204,8 @@ final class RecorderModel {
             else { item.duration = elapsed }
             do { try store.update(item); status = "录音已保存" }
             catch { errorMessage = "音频已保留，但文件信息保存失败：\(error.localizedDescription)" }
+            let savedID = item.id
+            store.beginMeetingSummary(savedID)
         }
         RecordingActivity.end()
         UIApplication.shared.isIdleTimerDisabled = false

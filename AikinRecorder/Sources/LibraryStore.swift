@@ -21,6 +21,9 @@ final class LibraryStore {
     var transcriptCursor: TimeInterval = 0
     var transcriptPaused = false
     var transcriptTick = 0
+    var summarizingID: UUID?
+    var summaryProgress = 0.0
+    var summaryTick = 0
     private(set) var todos: [TodoItem] = []
     private(set) var trash: [TrashedRecording] = []
     let directory: URL
@@ -256,6 +259,67 @@ final class LibraryStore {
         let url = folder.appendingPathComponent(Recording.cleanTitle(item.title) + "_会议总结").appendingPathExtension("txt")
         try (text ?? item.summary).write(to: url, atomically: true, encoding: .utf8)
         return url
+    }
+
+    private var summaryTask: Task<Void, Never>?
+    private var summaryGeneration = 0
+
+    func beginMeetingSummary(_ id: UUID, replacing: Bool = false) {
+        if !replacing, summarizingID == id { return }
+        guard let item = recordings.first(where: { $0.id == id }),
+              !item.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        summaryTask?.cancel()
+        summaryGeneration += 1
+        let generation = summaryGeneration
+        summarizingID = id
+        summaryProgress = 0.05
+        summaryTick += 1
+        let date = item.createdAt.formatted(date: .numeric, time: .omitted)
+        let transcript = item.transcript
+        summaryTask = Task { [weak self] in
+            guard let self else { return }
+            let background = UIApplication.shared.beginBackgroundTask(withName: "MeetingSummary")
+            defer {
+                if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
+                if self.summaryGeneration == generation {
+                    self.summarizingID = nil
+                    self.summaryProgress = 1
+                    self.summaryTick += 1
+                }
+            }
+            do {
+                let minutes = try await CustomModelClient.summarize(kind: .minutes, transcript: transcript, meetingDate: date) { value in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        self.summaryProgress = 0.05 + value * 0.45
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                self.applySummary(id: id, minutes: minutes, actions: nil)
+                let actions = try await CustomModelClient.summarize(kind: .tasks, transcript: transcript, meetingDate: date) { value in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        self.summaryProgress = 0.5 + value * 0.5
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                self.applySummary(id: id, minutes: nil, actions: actions)
+            } catch {
+                if !Task.isCancelled { self.errorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    private func applySummary(id: UUID, minutes: String?, actions: String?) {
+        guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
+        if let minutes {
+            recordings[index].storeSummary(minutes, engine: "custom")
+            let subject = Recording.subjectTitle(from: minutes)
+            if !subject.isEmpty { recordings[index].title = Recording.cleanTitle(subject) }
+        }
+        if let actions { recordings[index].storeSummary(actions, engine: "actions") }
+        try? persist()
+        summaryTick += 1
     }
 
     private func persist() throws {

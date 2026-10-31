@@ -17,11 +17,6 @@ struct SettingsView: View {
                     Text("密钥只保存在这台手机。会议总结和首页提问都使用这个接口。")
                 }
                 Section {
-                    NavigationLink("我的记忆") { MeetingMemoryView() }
-                } footer: {
-                    Text("告诉 Aikin 你是谁、会议在做什么。它会记住，也可以改正。")
-                }
-                Section {
                     NavigationLink {
                         List {
                             ForEach(store.recordings) { item in
@@ -149,46 +144,6 @@ private struct WebDAVSettingsView: View {
             defer { working = false }
             do { try await WebDAVSync.sync(store); message = "同步完成。" }
             catch { message = error.localizedDescription }
-        }
-    }
-}
-
-private struct MeetingMemoryView: View {
-    @State private var memory = MeetingMemory.text
-    @State private var note = ""
-    @State private var working = false
-    @State private var message: String?
-
-    var body: some View {
-        Form {
-            Section {
-                TextEditor(text: $memory)
-                    .frame(minHeight: 140)
-            } header: { Text("当前记忆") } footer: { Text("这里的内容会直接放进之后每次会议总结的提示词。") }
-            Section {
-                TextField("例如：我是 Aikin，周会讨论产品进度", text: $note, axis: .vertical)
-                Button(working ? "正在整理…" : "发送给 Aikin") { send() }
-                    .disabled(working || note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            } footer: { Text("Aikin 会把这句话补进记忆，也可以纠正原来写错的内容。") }
-        }
-        .onDisappear { MeetingMemory.text = memory }
-        .navigationTitle("我的记忆")
-        .navigationBarTitleDisplayMode(.inline)
-        .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("好") { message = nil }
-        } message: { Text(message ?? "") }
-    }
-
-    private func send() {
-        let input = note
-        working = true
-        Task {
-            defer { working = false }
-            do {
-                memory = try await CustomModelClient.reviseMemory(input)
-                MeetingMemory.text = memory
-                note = ""
-            } catch { message = error.localizedDescription }
         }
     }
 }

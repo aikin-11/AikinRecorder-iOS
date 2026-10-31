@@ -12,16 +12,14 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    NavigationLink("ChatGPT") { ChatGPTSettingsView() }
-                    NavigationLink("DeepSeek") { DeepSeekSettingsView() }
                     NavigationLink("Aikin") { CustomModelSettingsView() }
                 } header: { Text("模型服务") } footer: {
-                    Text("ChatGPT 用登录使用套餐，不填 API Key。DeepSeek 和自定义模型使用密钥，只保存在这台手机。")
+                    Text("密钥只保存在这台手机。会议总结和首页提问都使用这个接口。")
                 }
                 Section {
                     NavigationLink("我的记忆") { MeetingMemoryView() }
                 } footer: {
-                    Text("告诉 DeepSeek 你是谁、会议在做什么。它会记住，也可以改正。")
+                    Text("告诉 Aikin 你是谁、会议在做什么。它会记住，也可以改正。")
                 }
                 Section {
                     NavigationLink {
@@ -169,9 +167,9 @@ private struct MeetingMemoryView: View {
             } header: { Text("当前记忆") } footer: { Text("这里的内容会直接放进之后每次会议总结的提示词。") }
             Section {
                 TextField("例如：我是 Aikin，周会讨论产品进度", text: $note, axis: .vertical)
-                Button(working ? "正在整理…" : "发送给 DeepSeek") { send() }
+                Button(working ? "正在整理…" : "发送给 Aikin") { send() }
                     .disabled(working || note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            } footer: { Text("DeepSeek 会把这句话补进记忆，也可以纠正原来写错的内容。") }
+            } footer: { Text("Aikin 会把这句话补进记忆，也可以纠正原来写错的内容。") }
         }
         .onDisappear { MeetingMemory.text = memory }
         .navigationTitle("我的记忆")
@@ -187,7 +185,7 @@ private struct MeetingMemoryView: View {
         Task {
             defer { working = false }
             do {
-                memory = try await DeepSeekClient.reviseMemory(input)
+                memory = try await CustomModelClient.reviseMemory(input)
                 MeetingMemory.text = memory
                 note = ""
             } catch { message = error.localizedDescription }

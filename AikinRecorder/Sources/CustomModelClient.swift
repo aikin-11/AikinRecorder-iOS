@@ -45,6 +45,13 @@ enum CustomModelClient {
         return CustomModelSettings.model
     }
 
+    static func reviseMemory(_ note: String) async throws -> String {
+        try await complete(messages: [
+            ["role": "system", "content": "你维护一份给会议助手用的记忆。根据用户的新说明修正错误、补充事实，输出更新后的完整记忆。用简短中文，不要寒暄。"],
+            ["role": "user", "content": "当前记忆：\n\(MeetingMemory.text)\n\n新说明：\n\(note)"]
+        ], onProgress: { _ in })
+    }
+
     static func summarize(transcript: String, onProgress: @escaping (Double) -> Void) async throws -> String {
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw RecorderError.message("这条录音还没有转写文字，无法总结。")

@@ -10,7 +10,10 @@ struct RecordingDetailView: View {
     @State private var titleDraft = ""
     @State private var summarizing = false
     @State private var summaryProgress = 0.0
-    @State private var showingSummary = false
+    @State private var showingTranscript = false
+    @State private var preparedView = false
+    @State private var offeringTitle = false
+    @State private var suggestedTitle = ""
     @State private var findText = ""
     @State private var findIndex = 0
     @State private var showingFind = false
@@ -26,6 +29,7 @@ struct RecordingDetailView: View {
                 Spacer()
                 Text("\(Recording.countText(item.transcript.count)) 字").monospacedDigit()
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal)
+            if showingTranscript {
             ScrollViewReader { proxy in
                 ScrollView {
                     if item.lines.isEmpty {
@@ -120,11 +124,25 @@ struct RecordingDetailView: View {
                     }
                 }.padding(.vertical, 10)
             }.padding(20).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal)
+            if item.hasSummary {
+                Button("会议总结") { showingTranscript = false }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal)
+            }
+            } else {
+                summaryPage
+            }
         }
         .padding(.bottom, 12).background(Color.black)
-        .navigationTitle(item.title).navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Button(item.title) { offerReplacement() }
+                    .font(.headline)
+                    .lineLimit(1)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("重命名", systemImage: "pencil") { titleDraft = item.title; showingRename = true }
@@ -133,6 +151,10 @@ struct RecordingDetailView: View {
                     Button(transcriptButtonTitle, systemImage: "text.bubble") { transcriptAction() }.disabled(store.queuedIDs.contains(item.id))
                     Button("查找", systemImage: "magnifyingglass") { showingFind = true }
                     Button("标记说明", systemImage: "star") { showingMarks = true }.disabled(item.marks.isEmpty)
+                    Button("导出总结", systemImage: "doc.richtext") {
+                        do { SystemPresenter.share(try store.shareSummary(item, text: item.summaryText(engine: "custom"))) }
+                        catch { errorMessage = error.localizedDescription }
+                    }.disabled(item.summaryText(engine: "custom").isEmpty)
                     Button(item.hasSummary ? "查看总结" : "会议总结", systemImage: "sparkles") { openSummary() }
                 } label: { Image(systemName: "ellipsis") }.accessibilityLabel("更多操作")
             }
@@ -142,6 +164,10 @@ struct RecordingDetailView: View {
             Button("保存") { item.title = Recording.cleanTitle(titleDraft); save() }
             Button("取消", role: .cancel) { }
         }
+        .alert("用这个标题替换？", isPresented: $offeringTitle) {
+            Button("替换") { item.title = Recording.cleanTitle(suggestedTitle); save() }
+            Button("取消", role: .cancel) { }
+        } message: { Text(suggestedTitle) }
         .alert("提示", isPresented: Binding(get: { errorMessage != nil || player.errorMessage != nil }, set: { if !$0 { errorMessage = nil; player.errorMessage = nil } })) {
             Button("好") { errorMessage = nil; player.errorMessage = nil }
         } message: { Text(errorMessage ?? player.errorMessage ?? "") }
@@ -175,16 +201,11 @@ struct RecordingDetailView: View {
             }
             .preferredColorScheme(.dark)
         }
-        .sheet(isPresented: $showingSummary) {
-            SummarySheet(recordingID: item.id, summary: item.summaryText(engine: "custom"), progress: summaryProgress, working: summarizing, regenerate: { summarize() }, applyTitle: { theme in
-                item.title = Recording.cleanTitle(theme)
-                save()
-            }) {
-                do { SystemPresenter.share(try store.shareSummary(item, text: item.summaryText(engine: "custom"))) }
-                catch { errorMessage = error.localizedDescription }
-            }
-        }
         .onAppear {
+            if !preparedView {
+                preparedView = true
+                showingTranscript = !item.hasSummary
+            }
             player.load(store.audioURL(for: item))
             findText = initialQuery
             UIApplication.shared.isIdleTimerDisabled = store.transcribingID == item.id
@@ -277,12 +298,64 @@ struct RecordingDetailView: View {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    private func openSummary() { showingSummary = true }
+    private func openSummary() { showingTranscript = false }
+
+    private func offerReplacement() {
+        let theme = summaryTheme
+        if !theme.isEmpty, theme != item.title {
+            suggestedTitle = theme
+            offeringTitle = true
+        } else {
+            titleDraft = item.title
+            showingRename = true
+        }
+    }
+
+    private var visibleSummary: String {
+        let custom = item.summaryText(engine: "custom")
+        if !custom.isEmpty { return custom }
+        if !item.summary.isEmpty { return item.summary }
+        return item.summaryDeepSeek.isEmpty ? item.summaryChatGPT : item.summaryDeepSeek
+    }
+
+    private var summaryTheme: String {
+        let lines = visibleSummary.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        guard let line = lines.first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("主题：") }) else { return "" }
+        let stripped = line.replacingOccurrences(of: "主题：", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "#* "))
+        return String(stripped.prefix(16))
+    }
+
+    private var summaryPage: some View {
+        VStack(spacing: 0) {
+            if summarizing {
+                ProgressView(value: summaryProgress) { Text("正在生成会议总结…").font(.footnote) }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+            }
+            ScrollView {
+                MarkdownSummary(text: visibleSummary.isEmpty ? (summarizing ? "正在整理…" : "还没有总结。") : visibleSummary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .padding(.bottom, 72)
+            }
+            HStack {
+                Button("查看转写") { showingTranscript = true }
+                    .buttonStyle(.bordered)
+                Spacer()
+                Button(visibleSummary.isEmpty ? "生成总结" : "重新总结") { summarize() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.yellow)
+                    .foregroundStyle(.black)
+                    .disabled(summarizing)
+            }
+            .padding(16)
+        }
+    }
 
     private func summarize() {
         summarizing = true
         summaryProgress = 0
-        showingSummary = true
+        showingTranscript = false
         let transcript = item.transcript
         Task {
             defer { summarizing = false }
@@ -294,7 +367,6 @@ struct RecordingDetailView: View {
                 summaryProgress = 1
                 save()
             } catch {
-                showingSummary = false
                 errorMessage = error.localizedDescription
             }
         }
@@ -324,79 +396,6 @@ struct RecordingDetailView: View {
     private func startTranscription(replacing: Bool) {
         player.pause()
         store.beginTranscription(item, from: replacing ? 0 : item.transcribedThrough)
-    }
-}
-
-private struct SummarySheet: View {
-    let recordingID: UUID
-    let summary: String
-    let progress: Double
-    let working: Bool
-    let regenerate: () -> Void
-    let applyTitle: (String) -> Void
-    let export: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @Environment(LibraryStore.self) private var store
-    @State private var pickingTodos = false
-
-    private var theme: String {
-        let lines = summary.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
-        guard let line = lines.first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("主题：") }) else { return "" }
-        let stripped = line.replacingOccurrences(of: "主题：", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "#* "))
-        return String(stripped.prefix(16))
-    }
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
-                if working {
-                    ProgressView(value: progress) { Text("正在生成会议总结…").font(.footnote) }
-                        .padding(.horizontal)
-                }
-                ScrollView {
-                    MarkdownSummary(text: summary.isEmpty ? (working ? "正在整理…" : "还没有总结。") : summary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                        .padding(.bottom, 64)
-                }
-            }
-            .overlay(alignment: .bottom) {
-                HStack {
-                    Button("提取待办") { pickingTodos = true }
-                        .buttonStyle(.bordered)
-                        .disabled(summary.isEmpty || working)
-                    Spacer()
-                    Button(summary.isEmpty ? "生成总结" : "重新总结", action: regenerate)
-                        .buttonStyle(.borderedProminent)
-                        .tint(.yellow)
-                        .foregroundStyle(.black)
-                        .disabled(working)
-                }
-                .padding(16)
-            }
-            .sheet(isPresented: $pickingTodos) {
-                TodoPickView(recordingID: recordingID, titles: TodoParser.titles(in: summary))
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
-                ToolbarItem(placement: .principal) {
-                    if theme.isEmpty {
-                        Text("会议总结").font(.headline)
-                    } else {
-                        Button("会议总结") { applyTitle(theme) }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Menu {
-                        Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = summary }
-                        Button("导出 TXT", systemImage: "square.and.arrow.up") { export() }
-                    } label: { Image(systemName: "ellipsis") }
-                    .disabled(summary.isEmpty)
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
     }
 }
 

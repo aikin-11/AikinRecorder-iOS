@@ -16,7 +16,6 @@ struct LibraryView: View {
     @State private var errorMessage: String?
     @State private var itemToDelete: Recording?
     @State private var deleteAnchor = CGPoint(x: 180, y: 320)
-    @State private var showingTodos = false
     @State private var selectedItem: Recording?
 
     private var items: [Recording] {
@@ -82,12 +81,12 @@ struct LibraryView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 10) {
                     HStack(spacing: 8) {
-                        Button { engine = engine.next } label: {
+                        Button { engine = engine == .local ? .custom : .local } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "magnifyingglass")
-                                if engine != .local { Text(engine.title).font(.caption.weight(.semibold)) }
+                                if engine == .custom { Text("Aikin").font(.caption.weight(.semibold)) }
                             }
-                            .foregroundStyle(engine.tint)
+                            .foregroundStyle(engine == .custom ? Color.cyan : Color.secondary)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(engine.title)
@@ -100,15 +99,6 @@ struct LibraryView: View {
                     .glassEffect(.regular, in: .capsule)
                     GlassEffectContainer(spacing: 28) {
                     HStack {
-                        Button { showingTodos = true } label: {
-                            Image(systemName: "checklist")
-                                .font(.body.weight(.semibold))
-                                .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: 44, height: 44)
-                        .glassEffect(.regular.interactive(), in: .circle)
-                        .accessibilityLabel("待办")
                         Spacer()
                         Button { showingRecorder = true } label: {
                             Image(systemName: "mic.fill")
@@ -164,7 +154,6 @@ struct LibraryView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingTodos) { TodoListView() }
             .sheet(isPresented: $showingAnswer) {
                 NavigationStack {
                     ScrollView {

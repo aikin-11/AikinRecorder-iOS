@@ -278,7 +278,7 @@ enum ChatGPTClient {
 enum AnswerEngine: String, CaseIterable, Identifiable {
     case local, deepseek, chatgpt, custom
     var id: String { rawValue }
-    var title: String { switch self { case .local: "本地"; case .deepseek: "DeepSeek"; case .chatgpt: "ChatGPT"; case .custom: "自定义" } }
+    var title: String { switch self { case .local: "本地"; case .deepseek: "DeepSeek"; case .chatgpt: "ChatGPT"; case .custom: "Aikin" } }
     var next: AnswerEngine { switch self { case .local: .deepseek; case .deepseek: .chatgpt; case .chatgpt: .custom; case .custom: .local } }
     var tint: Color { switch self { case .local: .secondary; case .deepseek: .yellow; case .chatgpt: .red; case .custom: .cyan } }
 }

@@ -212,6 +212,35 @@ final class RecorderModel {
         endAlive()
     }
 
+    func discard(in store: LibraryStore) async {
+        guard state == .recording || state == .paused else { return }
+        state = .saving
+        let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "DiscardRecording")
+        defer { if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask) } }
+        await stopCapture()
+        if let item { try? store.discardDraft(item) }
+        item = nil
+        RecordingActivity.end()
+        UIApplication.shared.isIdleTimerDisabled = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        state = .saved
+        endAlive()
+    }
+
+    private func stopCapture() async {
+        timer?.cancel()
+        timer = nil
+        engine.stop()
+        if hasTap { engine.inputNode.removeTap(onBus: 0); hasTap = false }
+        await capture?.close()
+        capture = nil
+        await speech?.cancel()
+        speech = nil
+        if let observer = interruptionObserver { NotificationCenter.default.removeObserver(observer); interruptionObserver = nil }
+        if let observer = markObserver { NotificationCenter.default.removeObserver(observer); markObserver = nil }
+        if let observer = backgroundObserver { NotificationCenter.default.removeObserver(observer); backgroundObserver = nil }
+    }
+
     private func reinforceSession() {
         guard state == .recording || state == .paused else { return }
         let session = AVAudioSession.sharedInstance()
@@ -262,9 +291,11 @@ final class RecorderModel {
 
     func addMark() {
         guard state == .recording || state == .paused else { return }
-        marks.append(RecordingMark(id: UUID(), time: elapsed, note: ""))
+        let anchor = lines.min { abs($0.time - elapsed) < abs($1.time - elapsed) }
+        let time = anchor?.time ?? elapsed
+        marks.append(RecordingMark(id: UUID(), time: time, note: ""))
         markFlashUntil = Date().addingTimeInterval(2)
-        status = "已标记 \(Recording.compactTime(elapsed))"
+        status = "已标记 \(Recording.compactTime(time))"
         pushActivity(force: true)
     }
 

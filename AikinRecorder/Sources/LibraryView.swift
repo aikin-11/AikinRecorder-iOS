@@ -11,7 +11,6 @@ struct LibraryView: View {
     @State private var answerSources: [Recording] = []
     @State private var showingAnswer = false
     @State private var showingRecorder = false
-    @State private var autoStartRecording = false
     @State private var showingSettings = false
     @State private var importing = false
     @State private var errorMessage: String?
@@ -99,6 +98,7 @@ struct LibraryView: View {
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .glassEffect(.regular, in: .capsule)
+                    GlassEffectContainer(spacing: 28) {
                     HStack {
                         Button { showingTodos = true } label: {
                             Image(systemName: "checklist")
@@ -110,17 +110,13 @@ struct LibraryView: View {
                         .glassEffect(.regular.interactive(), in: .circle)
                         .accessibilityLabel("待办")
                         Spacer()
-                        Button {
-                            autoStartRecording = true
-                            showingRecorder = true
-                        } label: {
+                        Button { showingRecorder = true } label: {
                             Image(systemName: "mic.fill")
                                 .font(.title2.weight(.semibold))
-                                .foregroundStyle(.black)
-                                .frame(width: 68, height: 68)
-                                .background(.white, in: Circle())
+                                .frame(width: 72, height: 72)
                         }
                         .buttonStyle(.plain)
+                        .glassEffect(.regular.interactive(), in: .circle)
                         .accessibilityLabel("开始录音")
                         Spacer()
                         Button { importAudio() } label: {
@@ -134,6 +130,7 @@ struct LibraryView: View {
                         .disabled(importing)
                         .accessibilityLabel("导入外部音频")
                     }
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -141,7 +138,7 @@ struct LibraryView: View {
                 .background(Color.black)
             }
             .navigationDestination(item: $selectedItem) { item in RecordingDetailView(item: item, initialQuery: query) }
-            .sheet(isPresented: $showingRecorder, onDismiss: { autoStartRecording = false }) { RecorderView(autoStart: autoStartRecording) }
+            .sheet(isPresented: $showingRecorder) { RecorderView() }
             .overlay { if importing { ProgressView("正在导入…").padding(24).glassEffect(in: .rect(cornerRadius: 20)) } }
             .overlay {
                 GeometryReader { geo in

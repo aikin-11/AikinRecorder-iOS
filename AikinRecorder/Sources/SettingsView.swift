@@ -14,7 +14,7 @@ struct SettingsView: View {
                 Section {
                     NavigationLink("ChatGPT") { ChatGPTSettingsView() }
                     NavigationLink("DeepSeek") { DeepSeekSettingsView() }
-                    NavigationLink("自定义模型") { CustomModelSettingsView() }
+                    NavigationLink("Aikin") { CustomModelSettingsView() }
                 } header: { Text("模型服务") } footer: {
                     Text("ChatGPT 用登录使用套餐，不填 API Key。DeepSeek 和自定义模型使用密钥，只保存在这台手机。")
                 }
@@ -255,7 +255,7 @@ private struct CustomModelSettingsView: View {
                 Text("按 OpenAI 兼容格式发送。测试会请求 /v1/models。会议总结发送到 /v1/chat/completions，模型名需与接收端一致。密钥只保存在这台手机。")
             }
         }
-        .navigationTitle("自定义模型")
+        .navigationTitle("Aikin")
         .navigationBarTitleDisplayMode(.inline)
         .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("好") { message = nil }

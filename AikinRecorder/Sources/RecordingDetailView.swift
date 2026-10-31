@@ -11,16 +11,12 @@ struct RecordingDetailView: View {
     @State private var summarizing = false
     @State private var summaryProgress = 0.0
     @State private var showingSummary = false
-    @State private var suggestedTitle = ""
-    @State private var offeringTitle = false
-    @State private var titleReady = false
     @State private var findText = ""
     @State private var findIndex = 0
     @State private var showingFind = false
     @State private var showingMarks = false
     @State private var transcriptScrubbing = false
     @State private var confirmingRetranscribe = false
-    @State private var summaryEngine: AnswerEngine = .deepseek
 
     var body: some View {
         @Bindable var player = player
@@ -45,7 +41,7 @@ struct RecordingDetailView: View {
                                 HStack(alignment: .top, spacing: 12) {
                                     HStack(spacing: 2) {
                                         Text(Recording.timeText(times[line.id] ?? line.time))
-                                        if item.marks.contains(where: { abs($0.time - line.time) < 1.2 }) {
+                                        if Recording.markedLine(line.id, among: item.lines.map { ($0.id, times[$0.id] ?? $0.time) }, marks: item.marks) {
                                             Image(systemName: "bookmark.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                                         }
                                     }
@@ -179,11 +175,12 @@ struct RecordingDetailView: View {
             }
             .preferredColorScheme(.dark)
         }
-        .sheet(isPresented: $showingSummary, onDismiss: {
-            if titleReady { titleReady = false; offeringTitle = true }
-        }) {
-            SummarySheet(recordingID: item.id, deepSeek: item.summaryText(engine: "deepseek"), chatGPT: item.summaryText(engine: "chatgpt"), custom: item.summaryText(engine: "custom"), progress: summaryProgress, working: summarizing, engine: $summaryEngine, regenerate: { summarize() }) {
-                do { SystemPresenter.share(try store.shareSummary(item, text: item.summaryText(engine: summaryEngine.rawValue))) }
+        .sheet(isPresented: $showingSummary) {
+            SummarySheet(recordingID: item.id, summary: item.summaryText(engine: "custom"), progress: summaryProgress, working: summarizing, regenerate: { summarize() }, applyTitle: { theme in
+                item.title = Recording.cleanTitle(theme)
+                save()
+            }) {
+                do { SystemPresenter.share(try store.shareSummary(item, text: item.summaryText(engine: "custom"))) }
                 catch { errorMessage = error.localizedDescription }
             }
         }
@@ -203,10 +200,6 @@ struct RecordingDetailView: View {
         .confirmationDialog("重新转写会替换现有文字", isPresented: $confirmingRetranscribe, titleVisibility: .visible) {
             Button("重新转写", role: .destructive) { startTranscription(replacing: true) }
         }
-        .alert("用这个标题替换？", isPresented: $offeringTitle) {
-            Button("替换") { item.title = Recording.cleanTitle(String(suggestedTitle.prefix(16))); save() }
-            Button("保留原标题", role: .cancel) { }
-        } message: { Text(suggestedTitle) }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             player.stop()
@@ -294,17 +287,12 @@ struct RecordingDetailView: View {
         Task {
             defer { summarizing = false }
             do {
-                let text = try await MeetingAI.summarize(transcript: transcript, engine: summaryEngine) { value in
+                let text = try await MeetingAI.summarize(transcript: transcript, engine: .custom) { value in
                     Task { @MainActor in summaryProgress = value }
                 }
-                item.storeSummary(text, engine: summaryEngine.rawValue)
+                item.storeSummary(text, engine: "custom")
                 summaryProgress = 1
                 save()
-                let theme = DeepSeekClient.theme(from: text)
-                if !theme.isEmpty, theme != item.title {
-                    suggestedTitle = theme
-                    titleReady = true
-                }
             } catch {
                 showingSummary = false
                 errorMessage = error.localizedDescription
@@ -341,39 +329,28 @@ struct RecordingDetailView: View {
 
 private struct SummarySheet: View {
     let recordingID: UUID
-    let deepSeek: String
-    let chatGPT: String
-    let custom: String
+    let summary: String
     let progress: Double
     let working: Bool
-    @Binding var engine: AnswerEngine
     let regenerate: () -> Void
+    let applyTitle: (String) -> Void
     let export: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(LibraryStore.self) private var store
     @State private var pickingTodos = false
 
-    private var summary: String {
-        switch engine {
-        case .chatgpt: return chatGPT
-        case .custom: return custom
-        default: return deepSeek
-        }
+    private var theme: String {
+        let lines = summary.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        guard let line = lines.first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("主题：") }) else { return "" }
+        let stripped = line.replacingOccurrences(of: "主题：", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "#* "))
+        return String(stripped.prefix(16))
     }
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
-                Picker("模型", selection: $engine) {
-                    Text("DeepSeek").tag(AnswerEngine.deepseek)
-                    Text("ChatGPT").tag(AnswerEngine.chatgpt)
-                    Text("自定义").tag(AnswerEngine.custom)
-                }
-                .pickerStyle(.segmented)
-                .disabled(working)
-                .padding(.horizontal)
                 if working {
-                    ProgressView(value: progress) { Text("正在用 \(engine.title) 生成会议总结…").font(.footnote) }
+                    ProgressView(value: progress) { Text("正在生成会议总结…").font(.footnote) }
                         .padding(.horizontal)
                 }
                 ScrollView {
@@ -400,10 +377,16 @@ private struct SummarySheet: View {
             .sheet(isPresented: $pickingTodos) {
                 TodoPickView(recordingID: recordingID, titles: TodoParser.titles(in: summary))
             }
-            .navigationTitle("会议总结")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
+                ToolbarItem(placement: .principal) {
+                    if theme.isEmpty {
+                        Text("会议总结").font(.headline)
+                    } else {
+                        Button("会议总结") { applyTitle(theme) }
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Menu {
                         Button("复制", systemImage: "doc.on.doc") { UIPasteboard.general.string = summary }
@@ -415,7 +398,6 @@ private struct SummarySheet: View {
         }
         .preferredColorScheme(.dark)
     }
-
 }
 
 struct MarkdownSummary: View {

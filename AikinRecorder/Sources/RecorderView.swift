@@ -3,7 +3,6 @@ import SwiftUI
 struct RecorderView: View {
     @Environment(LibraryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    var autoStart = false
     @State private var model = RecorderModel()
     @State private var preparingTask: Task<Void, Never>?
     @State private var confirmingClose = false
@@ -35,7 +34,7 @@ struct RecorderView: View {
                                     HStack(alignment: .top, spacing: 12) {
                                         HStack(spacing: 2) {
                                             Text(Recording.timeText(line.time))
-                                            if model.marks.contains(where: { abs($0.time - line.time) < 1.2 }) {
+                                            if Recording.markedLine(line.id, among: model.lines.map { ($0.id, $0.time) }, marks: model.marks) {
                                                 Image(systemName: "bookmark.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                                             }
                                         }
@@ -79,8 +78,10 @@ struct RecorderView: View {
                 }
             }
             .interactiveDismissDisabled(model.hasUnsavedRecording || model.state == .preparing)
-            .confirmationDialog("保存录音后退出？", isPresented: $confirmingClose, titleVisibility: .visible) {
+            .confirmationDialog("结束这次录音？", isPresented: $confirmingClose, titleVisibility: .visible) {
                 Button("保存并退出") { Task { await model.finish(in: store); dismiss() } }
+                Button("不保存并退出", role: .destructive) { Task { await model.discard(in: store); dismiss() } }
+                Button("取消", role: .cancel) { }
             }
             .alert("保存录音", isPresented: $showingRename) {
                 TextField("录音名称", text: $titleDraft)
@@ -97,7 +98,7 @@ struct RecorderView: View {
         .preferredColorScheme(.dark).tint(.white)
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
-            guard autoStart, model.state == .idle, preparingTask == nil else { return }
+            guard model.state == .idle, preparingTask == nil else { return }
             preparingTask = Task { await model.start(in: store) }
         }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = model.state != .recording && model.state != .paused }

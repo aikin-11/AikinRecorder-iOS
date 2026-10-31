@@ -171,6 +171,13 @@ final class LibraryStore {
         if FileManager.default.fileExists(atPath: url.path) { try? FileManager.default.removeItem(at: url) }
     }
 
+    func discardDraft(_ recording: Recording) throws {
+        recordings.removeAll { $0.id == recording.id }
+        try persist()
+        let url = audioURL(for: recording)
+        if FileManager.default.fileExists(atPath: url.path) { try? FileManager.default.removeItem(at: url) }
+    }
+
     func importAudio(from source: URL) async throws -> Recording {
         let access = source.startAccessingSecurityScopedResource()
         defer { if access { source.stopAccessingSecurityScopedResource() } }

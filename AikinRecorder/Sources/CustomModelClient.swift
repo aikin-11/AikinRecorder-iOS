@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 enum CustomModelSettings {
     static let defaultBase = "https://nas.aikin.site:8443/aikinday-test/v1"
@@ -87,6 +88,19 @@ enum CustomModelClient {
         ]
         let body = try JSONSerialization.data(withJSONObject: payload)
         guard body.count <= 1_000_000 else { throw RecorderError.message("发给自定义模型的内容超过 1MB。") }
+        let cellular = await !RouteLink.reachable()
+        if cellular {
+            return try await RouteLink.complete(path: "/chat/completions", body: body, onProgress: onProgress)
+        }
+        do {
+            return try await completeOverURLSession(body: body, onProgress: onProgress)
+        } catch let error as URLError {
+            guard RouteLink.shouldRetryOnCellular(error) else { throw error }
+            return try await RouteLink.complete(path: "/chat/completions", body: body, onProgress: onProgress)
+        }
+    }
+
+    private static func completeOverURLSession(body: Data, onProgress: @escaping (Double) -> Void) async throws -> String {
         let (bytes, response) = try await open(path: "/chat/completions", body: body)
         guard let http = response as? HTTPURLResponse else { throw RecorderError.message("自定义模型没有返回结果。") }
         guard (200..<300).contains(http.statusCode) else {
@@ -123,11 +137,27 @@ enum CustomModelClient {
     }
 
     private static func send(path: String, method: String, body: Data?, timeout: TimeInterval) async throws -> (Data, HTTPURLResponse) {
-        let (bytes, response) = try await open(path: path, method: method, body: body, timeout: timeout)
-        var data = Data()
-        for try await byte in bytes { data.append(byte) }
-        guard let http = response as? HTTPURLResponse else { throw RecorderError.message("自定义模型没有返回结果。") }
-        return (data, http)
+        if await !RouteLink.reachable() {
+            let (data, status) = try await RouteLink.data(path: path, method: method, body: body)
+            guard let response = HTTPURLResponse(url: URL(string: CustomModelSettings.baseURL + path)!, statusCode: status, httpVersion: nil, headerFields: nil) else {
+                throw RecorderError.message("自定义模型没有返回结果。")
+            }
+            return (data, response)
+        }
+        do {
+            let (bytes, response) = try await open(path: path, method: method, body: body, timeout: timeout)
+            var data = Data()
+            for try await byte in bytes { data.append(byte) }
+            guard let http = response as? HTTPURLResponse else { throw RecorderError.message("自定义模型没有返回结果。") }
+            return (data, http)
+        } catch let error as URLError {
+            guard RouteLink.shouldRetryOnCellular(error) else { throw error }
+            let (data, status) = try await RouteLink.data(path: path, method: method, body: body)
+            guard let response = HTTPURLResponse(url: URL(string: CustomModelSettings.baseURL + path)!, statusCode: status, httpVersion: nil, headerFields: nil) else {
+                throw RecorderError.message("自定义模型没有返回结果。")
+            }
+            return (data, response)
+        }
     }
 
     private static func open(path: String, method: String = "POST", body: Data? = nil, timeout: TimeInterval = 600) async throws -> (URLSession.AsyncBytes, URLResponse) {
@@ -151,5 +181,178 @@ enum CustomModelClient {
         }
         let detail = String(data: data, encoding: .utf8) ?? ""
         return detail.isEmpty ? fallback : "自定义模型连接失败：\(detail.prefix(160))"
+    }
+}
+
+private enum RouteLink {
+    static func shouldRetryOnCellular(_ error: URLError) -> Bool {
+        switch error.code {
+        case .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .networkConnectionLost, .notConnectedToInternet, .internationalRoamingOff, .dataNotAllowed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func reachable() async -> Bool {
+        guard let url = URL(string: CustomModelSettings.baseURL) else { return false }
+        do {
+            let connection = try await connect(url: url, cellular: false, timeout: 6)
+            connection.cancel()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    static func data(path: String, method: String, body: Data?) async throws -> (Data, Int) {
+        let (status, payload) = try await exchange(path: path, method: method, body: body, onChunk: { _ in })
+        return (payload, status)
+    }
+
+    static func complete(path: String, body: Data, onProgress: @escaping (Double) -> Void) async throws -> String {
+        onProgress(0.08)
+        var collected = ""
+        var ticks = 0
+        let (status, _) = try await exchange(path: path, method: "POST", body: body) { line in
+            if line.hasPrefix(":") {
+                ticks += 1
+                onProgress(min(0.9, 0.08 + Double(ticks) * 0.02))
+                return
+            }
+            guard line.hasPrefix("data:") else { return }
+            let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if payload == "[DONE]" { return }
+            guard let data = payload.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            if let error = json["error"] as? [String: Any], let message = error["message"] as? String {
+                collected = ""
+                return
+            }
+            guard let choices = json["choices"] as? [[String: Any]] else { return }
+            if let delta = choices.first?["delta"] as? [String: Any], let piece = delta["content"] as? String {
+                collected += piece
+            } else if let message = choices.first?["message"] as? [String: Any], let piece = message["content"] as? String {
+                collected += piece
+            }
+            onProgress(min(0.98, 0.9 + Double(collected.count) / 4_000))
+        }
+        guard (200..<300).contains(status) else { throw RecorderError.message("自定义模型请求失败（\(status)）。") }
+        let text = collected.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw RecorderError.message("自定义模型没有返回内容。") }
+        onProgress(1)
+        return text
+    }
+
+    private static func exchange(path: String, method: String, body: Data?, onChunk: @escaping (String) -> Void) async throws -> (Int, Data) {
+        guard !CustomModelSettings.apiKey.isEmpty else { throw RecorderError.message("请先在设置中填写自定义模型 API Key。") }
+        guard let url = URL(string: CustomModelSettings.baseURL + path), let host = url.host else {
+            throw RecorderError.message("自定义模型地址无效。")
+        }
+        let connection = try await connect(url: url, cellular: true, timeout: 20)
+        var header = "\(method) \(url.path.isEmpty ? "/" : url.path) HTTP/1.1\r\n"
+        header += "Host: \(host)\(url.port.map { ":\($0)" } ?? "")\r\n"
+        header += "Authorization: Bearer \(CustomModelSettings.apiKey)\r\n"
+        header += "Connection: close\r\n"
+        if let body {
+            header += "Content-Type: application/json\r\n"
+            header += "Content-Length: \(body.count)\r\n"
+        }
+        header += "\r\n"
+        var request = Data(header.utf8)
+        if let body { request.append(body) }
+        try await send(request, on: connection)
+        var buffer = Data()
+        var raw = Data()
+        var status = 0
+        var headerDone = false
+        let deadline = Date().addingTimeInterval(600)
+        while Date() < deadline {
+            guard let chunk = try await receive(connection) else { break }
+            if chunk.isEmpty { continue }
+            raw.append(chunk)
+            buffer.append(chunk)
+            if !headerDone, let range = buffer.range(of: Data("\r\n\r\n".utf8)) {
+                let head = String(data: buffer.subdata(in: buffer.startIndex..<range.lowerBound), encoding: .utf8) ?? ""
+                status = Int(head.split(separator: " ").dropFirst().first ?? "") ?? 0
+                buffer.removeSubrange(..<range.upperBound)
+                headerDone = true
+            }
+            if headerDone {
+                while let newline = buffer.range(of: Data("\n".utf8)) {
+                    var line = String(data: buffer.subdata(in: buffer.startIndex..<newline.lowerBound), encoding: .utf8) ?? ""
+                    if line.hasSuffix("\r") { line.removeLast() }
+                    buffer.removeSubrange(..<newline.upperBound)
+                    onChunk(line)
+                }
+            }
+        }
+        if headerDone, !buffer.isEmpty {
+            onChunk(String(data: buffer, encoding: .utf8) ?? "")
+        }
+        connection.cancel()
+        guard headerDone else { throw RecorderError.message("自定义模型没有返回结果。") }
+        return (status, raw)
+    }
+
+    private static func connect(url: URL, cellular: Bool, timeout: TimeInterval) async throws -> NWConnection {
+        guard let host = url.host, let port = NWEndpoint.Port(rawValue: UInt16(url.port ?? 443)) else {
+            throw RecorderError.message("自定义模型地址无效。")
+        }
+        let parameters = NWParameters.tls
+        if cellular { parameters.requiredInterfaceType = .cellular }
+        let connection = NWConnection(host: .init(host), port: port, using: parameters)
+        let gate = ResumeGate()
+        return try await withCheckedThrowingContinuation { continuation in
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    gate.resume { continuation.resume(returning: connection) }
+                case .failed(let error):
+                    gate.resume { continuation.resume(throwing: error) }
+                case .cancelled:
+                    gate.resume { continuation.resume(throwing: URLError(.cancelled)) }
+                default:
+                    break
+                }
+            }
+            connection.start(queue: .global())
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                gate.resume {
+                    connection.cancel()
+                    continuation.resume(throwing: URLError(.timedOut))
+                }
+            }
+        }
+    }
+
+    private static func send(_ data: Data, on connection: NWConnection) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: data, completion: .contentProcessed { error in
+                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+            })
+        }
+    }
+
+    private static func receive(_ connection: NWConnection) async throws -> Data? {
+        try await withCheckedThrowingContinuation { continuation in
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, isComplete, error in
+                if let error { continuation.resume(throwing: error); return }
+                if let data, !data.isEmpty { continuation.resume(returning: data); return }
+                continuation.resume(returning: isComplete ? nil : Data())
+            }
+        }
+    }
+}
+
+private final class ResumeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+    func resume(_ body: () -> Void) {
+        lock.lock()
+        let open = !resumed
+        if open { resumed = true }
+        lock.unlock()
+        if open { body() }
     }
 }

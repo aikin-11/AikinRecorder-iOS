@@ -138,6 +138,13 @@ struct Recording: Identifiable, Codable, Hashable {
         return String((clean.isEmpty ? meetingTitle() : clean).prefix(100))
     }
 
+    static func markedLine(_ id: UUID, among lines: [(UUID, TimeInterval)], marks: [RecordingMark]) -> Bool {
+        marks.contains { mark in
+            guard let nearest = lines.min(by: { abs($0.1 - mark.time) < abs($1.1 - mark.time) }) else { return false }
+            return nearest.0 == id
+        }
+    }
+
     static func countText(_ count: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal

@@ -98,28 +98,29 @@ struct LibraryView: View {
                     .frame(height: 44)
                     .glassEffect(.regular, in: .capsule)
                     GlassEffectContainer(spacing: 28) {
-                    HStack {
-                        Spacer()
-                        Button { showingRecorder = true } label: {
-                            Image(systemName: "mic.fill")
-                                .font(.title2.weight(.semibold))
-                                .frame(width: 72, height: 72)
-                        }
-                        .buttonStyle(.plain)
-                        .glassEffect(.regular.interactive(), in: .circle)
-                        .accessibilityLabel("开始录音")
-                        Spacer()
-                        Button { importAudio() } label: {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.body.weight(.semibold))
+                        ZStack {
+                            HStack {
+                                Spacer()
+                                Button { importAudio() } label: {
+                                    Image(systemName: "square.and.arrow.down")
+                                        .font(.body.weight(.semibold))
+                                        .frame(width: 44, height: 44)
+                                }
+                                .buttonStyle(.plain)
                                 .frame(width: 44, height: 44)
+                                .glassEffect(.regular.interactive(), in: .circle)
+                                .disabled(importing)
+                                .accessibilityLabel("导入外部音频")
+                            }
+                            Button { showingRecorder = true } label: {
+                                Image(systemName: "mic.fill")
+                                    .font(.title2.weight(.semibold))
+                                    .frame(width: 72, height: 72)
+                            }
+                            .buttonStyle(.plain)
+                            .glassEffect(.regular.interactive(), in: .circle)
+                            .accessibilityLabel("开始录音")
                         }
-                        .buttonStyle(.plain)
-                        .frame(width: 44, height: 44)
-                        .glassEffect(.regular.interactive(), in: .circle)
-                        .disabled(importing)
-                        .accessibilityLabel("导入外部音频")
-                    }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -344,7 +345,7 @@ private struct RecordingRow: View {
     var body: some View {
         HStack(spacing: 13) {
             VStack(alignment: .leading, spacing: 7) {
-                Text(item.title).font(.body.weight(.medium)).lineLimit(2).multilineTextAlignment(.leading)
+                Text(item.title).font(.body.weight(.medium)).lineLimit(1).multilineTextAlignment(.leading)
                 if !query.isEmpty, let snippet = highlightedSnippet(item.transcript, query: query) {
                     Text(snippet).font(.caption).lineLimit(2)
                 }

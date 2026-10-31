@@ -4,11 +4,11 @@ struct RecordingDetailView: View {
     @Environment(LibraryStore.self) private var store
     @State var item: Recording
     var initialQuery = ""
+    var opensTranscript = false
     @State private var player = PlaybackModel()
     @State private var errorMessage: String?
     @State private var showingRename = false
     @State private var titleDraft = ""
-    @State private var summaryKind = 0
     @State private var showingTranscript = false
     @State private var preparedView = false
     @State private var offeringTitle = false
@@ -123,12 +123,6 @@ struct RecordingDetailView: View {
                     }
                 }.padding(.vertical, 10)
             }.padding(20).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal)
-            if item.hasSummary {
-                Button("会议总结") { showingTranscript = false }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.horizontal)
-            }
             } else {
                 summaryPage
             }
@@ -151,10 +145,9 @@ struct RecordingDetailView: View {
                     Button("查找", systemImage: "magnifyingglass") { showingFind = true }
                     Button("标记说明", systemImage: "star") { showingMarks = true }.disabled(item.marks.isEmpty)
                     Button("导出总结", systemImage: "doc.richtext") {
-                        let text = summaryKind == 0 ? minutesText : item.summaryActions
-                        do { SystemPresenter.share(try store.shareSummary(item, text: text)) }
+                        do { SystemPresenter.share(try store.shareSummary(item, text: minutesText)) }
                         catch { errorMessage = error.localizedDescription }
-                    }.disabled((summaryKind == 0 ? minutesText : item.summaryActions).isEmpty)
+                    }.disabled(minutesText.isEmpty)
                     Button(item.hasSummary ? "查看总结" : "会议总结", systemImage: "sparkles") { openSummary() }
                 } label: { Image(systemName: "ellipsis") }.accessibilityLabel("更多操作")
             }
@@ -204,7 +197,7 @@ struct RecordingDetailView: View {
         .onAppear {
             if !preparedView {
                 preparedView = true
-                showingTranscript = !item.hasSummary
+                showingTranscript = opensTranscript || !item.hasSummary
             }
             player.load(store.audioURL(for: item))
             findText = initialQuery
@@ -327,33 +320,26 @@ struct RecordingDetailView: View {
         return ""
     }
 
-    private var shownSummary: String { summaryKind == 0 ? minutesText : item.summaryActions }
-
     private var summaryPage: some View {
         VStack(spacing: 0) {
-            Picker("总结", selection: $summaryKind) {
-                Text("会议纪要").tag(0)
-                Text("待办清单").tag(1)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
             if store.summarizingID == item.id {
-                ProgressView(value: store.summaryProgress) {
-                    Text(store.summaryProgress < 0.5 ? "正在整理会议纪要…" : "正在整理待办清单…").font(.footnote)
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+                ProgressView(value: store.summaryProgress) { Text("正在整理会议纪要…").font(.footnote) }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
             }
             ScrollView {
-                MarkdownSummary(text: shownSummary.isEmpty ? (store.summarizingID == item.id ? "正在整理…" : "还没有这份总结。") : shownSummary)
+                MarkdownSummary(text: minutesText.isEmpty ? (store.summarizingID == item.id ? "正在整理…" : "还没有会议纪要。") : minutesText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .padding(.bottom, 72)
             }
             HStack {
-                Button("查看转写") { showingTranscript = true }
-                    .buttonStyle(.bordered)
+                NavigationLink {
+                    RecordingDetailView(item: item, initialQuery: initialQuery, opensTranscript: true)
+                } label: {
+                    Text("查看转写")
+                }
+                .buttonStyle(.bordered)
                 Spacer()
                 Button(item.hasSummary ? "重新总结" : "生成总结") { summarize() }
                     .buttonStyle(.borderedProminent)
@@ -408,48 +394,58 @@ struct RecordingDetailView: View {
 struct MarkdownSummary: View {
     let text: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 16) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .heading(let level, let line):
                     Text(inline(line)).font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline).textSelection(.enabled)
                 case .paragraph(let line):
                     Text(inline(line)).font(.body).textSelection(.enabled)
+                case .gap:
+                    Color.clear.frame(height: 8)
                 case .table(let rows):
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                            HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                            VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                                    Text(inline(cell)).font(index == 0 ? .caption.bold() : .caption).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                                    Text(inline(cell)).font(.body).textSelection(.enabled)
                                 }
                             }
-                            if index == 0 { Divider() }
                         }
                     }
-                    .padding(8)
-                    .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                 }
             }
         }
     }
 
-    private enum Block { case heading(Int, String), paragraph(String), table([[String]]) }
+    private enum Block { case heading(Int, String), paragraph(String), gap, table([[String]]) }
 
     private var blocks: [Block] {
-        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\t", with: " | ").components(separatedBy: "\n")
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\t", with: " ").components(separatedBy: "\n")
         var result: [Block] = []
         var table: [[String]] = []
         func flushTable() {
-            let rows = table.filter { row in !row.allSatisfy { $0.replacingOccurrences(of: "-", with: "").isEmpty } }
+            let rows = table.compactMap { row -> [String]? in
+                let cells = row.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !isRule($0) }
+                return cells.isEmpty ? nil : cells
+            }
             if !rows.isEmpty { result.append(.table(rows)) }
             table = []
         }
         for raw in lines {
             let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.isEmpty { flushTable(); continue }
+            if line.isEmpty {
+                flushTable()
+                if case .gap = result.last { continue }
+                if !result.isEmpty { result.append(.gap) }
+                continue
+            }
+            if isRule(line) { continue }
             if line.contains("|") {
-                let cells = line.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                let cells = line.split(separator: "|", omittingEmptySubsequences: true).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !isRule($0) }
                 if cells.count >= 2 { table.append(cells); continue }
+                if cells.count == 1 { flushTable(); result.append(.paragraph(cells[0])); continue }
+                continue
             }
             flushTable()
             if line.hasPrefix("### ") { result.append(.heading(3, String(line.dropFirst(4)))) }
@@ -459,6 +455,11 @@ struct MarkdownSummary: View {
         }
         flushTable()
         return result
+    }
+
+    private func isRule(_ line: String) -> Bool {
+        let marks = line.filter { !$0.isWhitespace }
+        return !marks.isEmpty && marks.allSatisfy { $0 == "|" || $0 == "-" || $0 == ":" }
     }
 
     private func inline(_ source: String) -> AttributedString {

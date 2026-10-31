@@ -288,19 +288,13 @@ final class LibraryStore {
                 }
             }
             do {
-                let minutes = try await CustomModelClient.summarize(kind: .minutes, transcript: transcript, meetingDate: date) { value in
-                    Task { @MainActor in
-                        guard let self else { return }
-                        self.summaryProgress = 0.05 + value * 0.45
-                    }
+                let minutes = try await CustomModelClient.summarize(kind: .minutes, transcript: transcript, meetingDate: date) { [weak self] value in
+                    Task { @MainActor in self?.summaryProgress = 0.05 + value * 0.45 }
                 }
                 guard !Task.isCancelled else { return }
                 self.applySummary(id: id, minutes: minutes, actions: nil)
-                let actions = try await CustomModelClient.summarize(kind: .tasks, transcript: transcript, meetingDate: date) { value in
-                    Task { @MainActor in
-                        guard let self else { return }
-                        self.summaryProgress = 0.5 + value * 0.5
-                    }
+                let actions = try await CustomModelClient.summarize(kind: .tasks, transcript: transcript, meetingDate: date) { [weak self] value in
+                    Task { @MainActor in self?.summaryProgress = 0.5 + value * 0.5 }
                 }
                 guard !Task.isCancelled else { return }
                 self.applySummary(id: id, minutes: nil, actions: actions)

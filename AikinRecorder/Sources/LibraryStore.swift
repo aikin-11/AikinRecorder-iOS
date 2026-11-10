@@ -49,7 +49,20 @@ final class LibraryStore {
             loadTodos()
             loadTrash()
             recoverUnindexedAudio()
+            Task { await repairZeroDurations() }
         } catch { errorMessage = "文件库读取失败：\(error.localizedDescription)" }
+    }
+
+    private func repairZeroDurations() async {
+        var changed = false
+        for index in recordings.indices where recordings[index].duration < 1 {
+            let url = audioURL(for: recordings[index])
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard let time = try? await AVURLAsset(url: url).load(.duration), time.seconds.isFinite, time.seconds > 1 else { continue }
+            recordings[index].duration = time.seconds
+            changed = true
+        }
+        if changed { try? persist() }
     }
 
     private var todosURL: URL { directory.appendingPathComponent("todos.json") }

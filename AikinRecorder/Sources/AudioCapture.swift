@@ -81,6 +81,37 @@ final class AudioCapture: @unchecked Sendable {
         }
     }
 
+    /// Finishes the m4a container so the file stays playable if the app is later killed.
+    func seal() async {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                file = nil
+                continuation.resume()
+            }
+        }
+    }
+
+    func beginFile(at url: URL) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async { [self] in
+                do {
+                    guard let inputFormat else { throw RecorderError.message("麦克风格式已丢失，无法继续写入。") }
+                    if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+                    file = try AVAudioFile(forWriting: url, settings: [
+                        AVFormatIDKey: kAudioFormatMPEG4AAC,
+                        AVSampleRateKey: inputFormat.sampleRate,
+                        AVNumberOfChannelsKey: inputFormat.channelCount,
+                        AVEncoderBitRateKey: 128_000
+                    ], commonFormat: inputFormat.commonFormat, interleaved: inputFormat.isInterleaved)
+                    failed = false
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     func close() async {
         await withCheckedContinuation { continuation in
             queue.async { [self] in

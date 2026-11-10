@@ -120,7 +120,7 @@ struct RecorderView: View {
         case .recording, .paused:
             GlassEffectContainer(spacing: 16) {
                 HStack(spacing: 16) {
-                    Button { model.togglePause() } label: {
+                    Button { Task { await model.togglePause(in: store) } } label: {
                         Label(model.state == .paused ? "继续" : "暂停", systemImage: model.state == .paused ? "play.fill" : "pause.fill")
                             .padding(.horizontal, 16).padding(.vertical, 16)
                     }.buttonStyle(.glass)
